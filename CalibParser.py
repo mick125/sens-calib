@@ -44,7 +44,6 @@ class CalibReader:
         :param output_path: file name prefix of output image, DL step and suffix will be added
         """
         fig, ax = plt.subplots()
-        # plot heat map
         im = ax.imshow(self.calib_data[delay_step], origin='lower')
 
         # set labels
@@ -60,17 +59,27 @@ class CalibReader:
         # issue - colorbar title outside of plottable area
 
         # plt.show()
-        plt.savefig(Path(output_path).joinpath('heatmaps',
-                    self.chip + '_heatmap_DLL-' + f'{delay_step+1:02d}' + '.png'), dpi=150)
+        out_path = Path(output_path).joinpath('heatmaps', self.chip + '_heatmap_DLL-' + f'{delay_step+1:02d}' + '.png')
+        plt.savefig(out_path, dpi=150)
 
-    def plot_hist(self, delay_step, output_file_name_prefix):
+    def plot_hist(self, delay_step, output_path):
         """
         Plot histogram of one frame for one DL step.
         :param delay_step: Delay line step
         :param output_file_name_prefix: file name prefix of output image, DL step and suffix will be added
         """
-        n, bins, patches = plt.hist(x=self.calib_data[delay_step])
-        plt.show()
+        fig, ax = plt.subplots()
+        plt.hist(x=self.calib_data[delay_step].reshape((-1)), bins=40, rwidth=.85, color='b')
+
+        # set labels
+        ax.set_xlabel('Distance [mm]')
+        ax.set_ylabel('Count [-]')
+        ax.set_title(f'{self.chip}, DLL = {delay_step+1}')
+
+        # plt.show()
+        out_path = Path(output_path).joinpath('histograms',
+                        self.chip + '_histogram_DLL-' + f'{delay_step+1:02d}' + '.png')
+        plt.savefig(out_path, dpi=150)
 
 
 if __name__ == '__main__':
@@ -80,17 +89,17 @@ if __name__ == '__main__':
     reader = CalibReader(calib_file_path)
     reader.load_calib_file()
 
-    delat = False
-    # delat = True
+    # delat = False
+    delat = True
     if delat:
         for dll in range(reader.n_delay_steps):
             # plot heat maps
             reader.plot_frame(dll, output_file)
 
             # plot histograms
-            reader.plot_hist(1, output_file)
+            reader.plot_hist(dll, output_file)
 
-    reader.plot_frame(40, output_file)
+    # reader.plot_frame(40, output_file)
     # reader.plot_hist(1, output_file)
 
     # print(reader.chip)
