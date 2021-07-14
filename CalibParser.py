@@ -16,15 +16,21 @@ class CalibReader:
         self.n_delay_steps = 50
         self.mod_frequency = int(self.file_path.parts[-1].split('_')[2]) * 1000
         self.chip = '_'.join(self.file_path.parts[-1].split('_')[:2])
+        self.mean_vs_dll = np.zeros((1))
+        self.stdev_vs_dll = np.zeros((1))
 
     def load_calib_file(self):
         """
         Parses and loads binary DRNU calibration file into variable self.calib_data.
+        Calculates mean and std. deviation for each DL step.
         """
         with open(self.file_path, 'rb') as file:
             self.calib_data = self.lsb_to_mm(np.fromfile(file, dtype=np.uint16), self.mod_frequency)
             # 50 delay line steps, 240 x 320 pixels
             self.calib_data = self.calib_data.reshape((self.n_delay_steps, 240, 320))
+
+        self.mean_vs_dll = np.array([self.calib_data[dll].mean() for dll in range(self.n_delay_steps)])
+        self.stdev_vs_dll = np.array([self.calib_data[dll].std() for dll in range(self.n_delay_steps)])
 
         print('Calibration data loaded,', np.count_nonzero(self.calib_data), 'non-zero elements found.\n')
 
@@ -110,16 +116,13 @@ class CalibReader:
 
     def plot_mean_std(self):
         """
-        Calculates and plots mean value and standard deviation for the whole frame for each DL step.
+        Plots mean value and standard deviation for the whole frame for each DL step.
         Creates two plots, for mean and std dev.
         """
-        mean = [self.calib_data[dll].mean() for dll in range(self.n_delay_steps)]
-        stdev = [self.calib_data[dll].std() for dll in range(self.n_delay_steps)]
-
         print('Plotting mean value and standard deviations vs. DL step...')
 
         # plot std dev of one frame vs. DL step
-        plt.plot(stdev, 'bo-', linewidth=0.6, markersize=3)
+        plt.plot(self.stdev_vs_dll, 'bo-', linewidth=0.6, markersize=3)
         plt.grid(True)
         plt.xlabel('Delay line step [-]')
         plt.ylabel('Measured distance std. deviation [mm]')
@@ -130,13 +133,34 @@ class CalibReader:
         plt.close()
 
         # plot mean value of one frame vs. DL step
-        plt.plot(mean, 'rs', markersize=3)
+        plt.plot(self.mean_vs_dll, 'rs', markersize=3)
         plt.grid(True)
         plt.xlabel('Delay line step [-]')
         plt.ylabel('Measured distance mean [mm]')
         plt.title(f'{self.chip}')
 
         out_path = Path(self.output_path).joinpath(self.chip + '_mean-vs-dll' + '.png')
+        plt.savefig(out_path, dpi=150)
+        plt.close()
+
+    def plot_pixel_err(self, x, y):
+        """
+        Plot measured value minus mean for all DL steps
+        :param x: pixel x coordinate
+        :param y: pixel y coordinate
+        """
+        print(f'Plotting deviation from mean for pixel [{x}, {y}]...')
+
+        err = np.array([self.calib_data[dll, x, y] for dll in range(self.n_delay_steps)])
+        err = err - self.mean_vs_dll
+        plt.plot(err, 'cd-', linewidth=0.6, markersize=5)
+
+        plt.grid(True)
+        plt.xlabel('Delay line step [-]')
+        plt.ylabel('Measured distance -  mean [mm]')
+        plt.title(f'{self.chip}, pixel [{x}, {y}]')
+
+        out_path = Path(self.output_path).joinpath(self.chip + f'_pixel-dev_{x:03d}-{y:03d}' + '.png')
         plt.savefig(out_path, dpi=150)
         plt.close()
 
@@ -150,6 +174,7 @@ if __name__ == '__main__':
     reader = CalibReader(calib_file_path, output_path)
     reader.load_calib_file()
 
-    reader.plot_mean_std()
+    reader.plot_pixel_err(10, 20)
 
+    # reader.plot_mean_std()
     # reader.plot_all('heat')
