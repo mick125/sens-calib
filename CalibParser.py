@@ -24,7 +24,7 @@ class CalibReader:
             self.calib_data = self.lsb_to_mm(np.fromfile(file, dtype=np.uint16), self.mod_frequency)
             self.calib_data = self.calib_data.reshape((self.n_delay_steps, 240, 320))  # 50 delay line steps, 240 x 320 pixels
 
-        print('Calibration data loaded,', np.count_nonzero(self.calib_data), 'non-zero elements found.')
+        print('Calibration data loaded,', np.count_nonzero(self.calib_data), 'non-zero elements found.\n')
 
     @staticmethod
     def lsb_to_mm(lst, frequency, maxphase=3e4):
@@ -37,11 +37,11 @@ class CalibReader:
         """
         return 3e8 / frequency / maxphase / 2 * lst * 1000
 
-    def plot_frame(self, delay_step, output_path):
+    def plot_heatmap(self, delay_step, output_path):
         """
         Plot one frame at given DL step.
         :param delay_step: Delay line step
-        :param output_path: file name prefix of output image, DL step and suffix will be added
+        :param output_path: base output path, sub folder and file name are added automatically
         """
         fig, ax = plt.subplots()
         im = ax.imshow(self.calib_data[delay_step], origin='lower')
@@ -66,10 +66,10 @@ class CalibReader:
         """
         Plot histogram of one frame for one DL step.
         :param delay_step: Delay line step
-        :param output_file_name_prefix: file name prefix of output image, DL step and suffix will be added
+        :param output_path: base output path, sub folder and file name are added automatically
         """
         fig, ax = plt.subplots()
-        plt.hist(x=self.calib_data[delay_step].reshape((-1)), bins=40, rwidth=.85, color='b')
+        n, bins, patches = plt.hist(x=self.calib_data[delay_step].reshape((-1)), bins=40, rwidth=.85, color='b')
 
         # set labels
         ax.set_xlabel('Distance [mm]')
@@ -81,25 +81,38 @@ class CalibReader:
                         self.chip + '_histogram_DLL-' + f'{delay_step+1:02d}' + '.png')
         plt.savefig(out_path, dpi=150)
 
+    def plot_all(self, plot_type, output_path):
+        """
+        Plots plot_type charts for all delay line steps.
+        :param plot_type: 'heat' or 'hist'
+        :param output_path: base output path, sub folder and file name are added automatically
+        """
+        avail_plots = ['heat', 'hist']
+
+        print(f'Creating {plot_type} plots...')
+
+        if plot_type == 'heat':
+            plot_func = self.plot_heatmap
+        elif plot_type == 'hist':
+            plot_func = self.plot_hist
+        else:
+            raise Exception('plot_type must be ' + ' or '.join(avail_plots))
+
+        for dll in range(self.n_delay_steps):
+            plot_func(dll, output_path)
+
+        print('done\n')
+
 
 if __name__ == '__main__':
     calib_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
-    output_file = r'C:\Data\01_NFL\calib_data\Analysis\DRNU'
+    output_path = r'C:\Data\01_NFL\calib_data\Analysis\DRNU'
 
     reader = CalibReader(calib_file_path)
     reader.load_calib_file()
 
-    # delat = False
-    delat = True
-    if delat:
-        for dll in range(reader.n_delay_steps):
-            # plot heat maps
-            reader.plot_frame(dll, output_file)
-
-            # plot histograms
-            reader.plot_hist(dll, output_file)
+    reader.plot_all('heat', output_path)
 
     # reader.plot_frame(40, output_file)
     # reader.plot_hist(1, output_file)
 
-    # print(reader.chip)
