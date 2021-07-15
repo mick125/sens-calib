@@ -143,7 +143,7 @@ class CalibReader:
         plt.savefig(out_path, dpi=150)
         plt.close()
 
-    def plot_pixel_err(self, x, y):
+    def plot_pixel_err(self, x, y, folder=''):
         """
         Plot measured value minus mean for all DL steps
         :param x: pixel x coordinate
@@ -160,11 +160,38 @@ class CalibReader:
         plt.ylabel('Measured distance -  mean [mm]')
         plt.title(f'{self.chip}, pixel [{x}, {y}]')
 
-        out_path = Path(self.output_path).joinpath(self.chip + f'_pixel-dev_{x:03d}-{y:03d}' + '.png')
+        out_path = Path(self.output_path).joinpath(folder, self.chip + f'_pixel-dev_{x:03d}-{y:03d}' + '.png')
         plt.savefig(out_path, dpi=150)
         plt.close()
 
         print('done')
+
+    def plot_extreme_pix(self, dll, n_pix, ext='max', plot=True):
+        """
+        Picks a given number of pixels with extreme value for a given DL and plots the respective pix error plots
+        :param n_pix: Number of extreme pixels to be found.
+        :param dll: DL step.
+        :param ext: Extreme, 'min' or 'max' (default).
+        :param plot: Plotting flag. If False, no plots are created (just pixel coordinates returned).
+        :return: Two arrays for x and y pixel coordinate.
+        """
+        if ext == 'max':
+            # get indices of extremal values of flattened array
+            ext_inds = np.argsort(self.calib_data[dll], axis=None)[-n_pix:]
+        elif ext == 'min':
+            ext_inds = np.argsort(self.calib_data[dll], axis=None)[:n_pix]
+        else:
+            raise Exception('The requested extreme must be min or max.')
+
+        # get indices of extremal values within a 2D array
+        extreme_pixels = np.unravel_index(ext_inds, self.calib_data[dll].shape)
+
+        #  plot pixel error graphs
+        if plot:
+            for x, y in zip(extreme_pixels[0], extreme_pixels[1]):
+                reader.plot_pixel_err(x, y, ext + '_pix')
+
+        return extreme_pixels
 
 
 if __name__ == '__main__':
@@ -174,7 +201,10 @@ if __name__ == '__main__':
     reader = CalibReader(calib_file_path, output_path)
     reader.load_calib_file()
 
-    reader.plot_pixel_err(10, 20)
+    # reader.plot_pixel_err(10, 21)
+
+    reader.plot_extreme_pix(3, 5, 'max')
+    reader.plot_extreme_pix(3, 5, 'min')
 
     # reader.plot_mean_std()
     # reader.plot_all('heat')
