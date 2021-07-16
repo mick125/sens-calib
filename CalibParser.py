@@ -15,6 +15,7 @@ class CalibReader:
         self.file_path = Path(file_path)
         self.output_path = Path(output_path)
         self.calib_data = np.zeros((1, 1, 1))
+        self.sigma_map = np.zeros((1, 1, 1))
         self.discr_map = np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1]))
         # self.discr_map = np.ma.masked_array(np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1])))
         self.mod_frequency = int(self.file_path.parts[-1].split('_')[2]) * 1000
@@ -48,12 +49,13 @@ class CalibReader:
         """
         return 3e8 / frequency / maxphase / 2 * lst * 1000
 
-    def plot_heatmap(self, delay_step, data, sub_folder):
+    def plot_heatmap(self, delay_step, data, sub_folder='', name='heatmap'):
         """
         Plot one frame at given DL step.
         :param delay_step: Delay line step
-        :param output_path: base output path, sub folder and file name are added automatically
         :param data: calibration data to be plotted, variable containing all DL steps
+        :param sub_folder: optional subfolder to which the heat map shall be saved
+        :param name: optional string which will be placed in the file name
         """
         fig, ax = plt.subplots()
         # im = ax.imshow(data[delay_step], interpolation=None, origin='lower', cmap='brg')
@@ -73,16 +75,16 @@ class CalibReader:
         # issue - colorbar title outside of plottable area
 
         out_path = Path(self.output_path).joinpath(sub_folder,
-                                                   self.chip + '_heatmap_DLL-' + f'{delay_step + 1:02d}' + '.png')
+                                                   self.chip + '_' + name + '_DLL-' + f'{delay_step + 1:02d}' + '.png')
         plt.savefig(out_path, dpi=200)
         plt.close()
 
-    def plot_calib(self, delay_step):
+    def plot_distance(self, delay_step):
         """
         Wrapper for plotting raw calibration data
         :param delay_step: DL step
         """
-        self.plot_heatmap(delay_step, self.calib_data, 'heatmaps')
+        self.plot_heatmap(delay_step, self.calib_data, sub_folder='distance', name='distance')
 
     def plot_discr(self, delay_step):
         """
@@ -90,7 +92,7 @@ class CalibReader:
         Method create_discr_map must be run prior to this method to create the discriminated plots.
         :param delay_step: DL step
         """
-        self.plot_heatmap(delay_step, self.discr_map, 'discr_maps')
+        self.plot_heatmap(delay_step, self.discr_map, sub_folder='discr_maps', name='discr-map')
 
     def plot_hist(self, delay_step):
         """
@@ -122,7 +124,7 @@ class CalibReader:
 
         # pick the plot type
         if plot_type == 'heat':
-            plot_func = self.plot_calib
+            plot_func = self.plot_distance
         elif plot_type == 'discr':
             plot_func = self.plot_discr
         elif plot_type == 'hist':
@@ -215,6 +217,31 @@ class CalibReader:
 
         return extreme_pixels
 
+    def plot_sigma_map(self):
+        """
+        Plots sigma heat map.
+        Method create_sigma_map has to be run prior to this one.
+        """
+        fig, ax = plt.subplots()
+        im = ax.pcolorfast(self.sigma_map)
+
+        # set labels
+        ax.set_xlabel('Pixel [-]')
+        ax.set_ylabel('Pixel [-]')
+        ax.set_title(self.chip)
+
+        # Create colorbar
+        divider = make_axes_locatable(ax)
+        cax = divider.append_axes("right", size="5%", pad=0.05)
+        cbar = plt.colorbar(im, cax=cax)
+        cbar.ax.set_ylabel('Std. deviation [mm]')
+        # issue - colorbar title outside of plottable area
+
+        out_path = Path(self.output_path).joinpath(self.chip + '_sigma_map.png')
+        plt.savefig(out_path, dpi=200)
+        plt.close()
+
+
     def create_discr_map(self, n_sigma=2):
         """
         Create heat maps without showing pixels above a threshold given by a number of sigma (st.dev).
@@ -233,6 +260,13 @@ class CalibReader:
             # self.discr_map[dll] = np.where(self.calib_data[dll] > threshold_low[dll], self.calib_data[dll], np.nan)
             # self.discr_map[dll] += np.where(self.discr_map[dll] <= threshold_high[dll], self.discr_map[dll], np.nan)
 
+    def create_sigma_map(self):
+        """
+        Creates a map of std. devs for each pixel based on measured values ove all DL steps.
+        """
+        temp = np.array([self.calib_data[dll] - self.mean_vs_dll[dll] for dll in range(self.n_delay_steps)])
+        self.sigma_map = np.std(temp, axis=0)
+
 
 if __name__ == '__main__':
     calib_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
@@ -241,14 +275,19 @@ if __name__ == '__main__':
     reader = CalibReader(calib_file_path, output_path)
     reader.load_calib_file()
 
-    # reader.plot_pixel_err(10, 21)
+    # PLOT THINGS
+    # reader.plot_mean_std()
 
     # reader.plot_extreme_pix(3, 5, 'max')
     # reader.plot_extreme_pix(3, 5, 'min')
 
-    reader.create_discr_map(2)
-    # reader.plot_discr(7)
-    reader.plot_all('discr')
-
-    # reader.plot_mean_std()
     # reader.plot_all('heat')
+
+    # reader.plot_all('hist')
+
+    # reader.create_discr_map(2)
+    # reader.plot_all('discr')
+
+    # TESTING SPACE
+    reader.create_sigma_map()
+    reader.plot_sigma_map()
