@@ -1,5 +1,6 @@
 from pathlib import Path
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from scipy.optimize import curve_fit
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -22,6 +23,7 @@ class CalibReader:
         self.chip = '_'.join(self.file_path.parts[-1].split('_')[:2])
         self.mean_vs_dll = np.zeros((1))
         self.stdev_vs_dll = np.zeros((1))
+        self.params = np.full(5, 2.1)
 
     def load_calib_file(self):
         """
@@ -267,6 +269,30 @@ class CalibReader:
         temp = np.array([self.calib_data[dll] - self.mean_vs_dll[dll] for dll in range(self.n_delay_steps)])
         self.sigma_map = np.std(temp, axis=0)
 
+    @staticmethod
+    def fit_funct_sin(x, p0, p1, p2, p3, p4):
+        """
+        function to be used for fitting the DRNU data
+        :param x: argument
+        :return: function result
+        """
+        return p0 * np.sin(p1 * x + p2) + p3 + p4 * x
+
+    @staticmethod
+    def fit_pix(x, y):
+        """
+        Fit output y of one pixel in all delay steps x with function fit_funct_sin.
+        :param x: x-axis values for the fit (delay steps)
+        :param y: y-axis data to be fitted (pixel output)
+        :return: fit parameters
+        """
+        print('Fitting...')
+        prior = np.array([150, .5, 1.6, 3500, 300])
+        bounds = ([50, 0, 0, 300, 150], [250, 1, np.pi, 5000, 450])
+        param = curve_fit(CalibReader.fit_funct_sin, x, y, p0=prior, bounds=bounds)
+        print('done')
+        return param
+
 
 if __name__ == '__main__':
     calib_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
@@ -288,6 +314,15 @@ if __name__ == '__main__':
     # reader.create_discr_map(2)
     # reader.plot_all('discr')
 
+    # reader.create_sigma_map()
+    # reader.plot_sigma_map()
+
     # TESTING SPACE
-    reader.create_sigma_map()
-    reader.plot_sigma_map()
+    n_points = 40
+    pix_coord = (84, 242)
+    params, _ = reader.fit_pix(range(n_points), reader.calib_data[:n_points, pix_coord[0], pix_coord[1]])
+    tmp = [f'{par:.2f}' for par in params]
+    print(*tmp, sep='\n')
+    plt.plot(CalibReader.fit_funct_sin(range(n_points), *params), 'b.')
+    plt.plot(reader.calib_data[:n_points, pix_coord[0], pix_coord[1]], 'r+')
+    plt.show()
