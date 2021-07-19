@@ -1,8 +1,9 @@
+import time
+import numpy as np
+import matplotlib.pyplot as plt
 from pathlib import Path
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.optimize import curve_fit
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 class CalibReader:
@@ -23,7 +24,7 @@ class CalibReader:
         self.chip = '_'.join(self.file_path.parts[-1].split('_')[:2])
         self.mean_vs_dll = np.zeros((1))
         self.stdev_vs_dll = np.zeros((1))
-        self.params = np.full(5, 2.1)
+        self.fit_params = np.zeros((1))
 
     def load_calib_file(self):
         """
@@ -100,7 +101,6 @@ class CalibReader:
         """
         Plot histogram of one frame for one DL step.
         :param delay_step: Delay line step
-        :param output_path: base output path, sub folder and file name are added automatically
         """
         fig, ax = plt.subplots()
         n, bins, patches = plt.hist(x=self.calib_data[delay_step].reshape((-1)), bins=40, rwidth=.85, color='b')
@@ -243,7 +243,6 @@ class CalibReader:
         plt.savefig(out_path, dpi=200)
         plt.close()
 
-
     def create_discr_map(self, n_sigma=2):
         """
         Create heat maps without showing pixels above a threshold given by a number of sigma (st.dev).
@@ -279,19 +278,41 @@ class CalibReader:
         return p0 * np.sin(p1 * x + p2) + p3 + p4 * x
 
     @staticmethod
-    def fit_pix(x, y):
+    def fit_pix(y, x):
         """
         Fit output y of one pixel in all delay steps x with function fit_funct_sin.
         :param x: x-axis values for the fit (delay steps)
         :param y: y-axis data to be fitted (pixel output)
         :return: fit parameters
         """
-        print('Fitting...')
+        # x = range(40)
         prior = np.array([150, .5, 1.6, 3500, 300])
         bounds = ([50, 0, 0, 300, 150], [250, 1, np.pi, 5000, 450])
-        param = curve_fit(CalibReader.fit_funct_sin, x, y, p0=prior, bounds=bounds)
-        print('done')
+        param, _ = curve_fit(CalibReader.fit_funct_sin, x, y, p0=prior, bounds=bounds)
         return param
+
+    def fit_all_pixels_calib(self, n_fit_points=40, n_fit_params=5):
+        """
+        Fits all pixels on the chip with fit_funct_sin formula
+        :param n_fit_points: Number of DL steps to be used for the fit.
+        :param n_fit_params: Number of parameters the fit function does have.
+        :return: Array with shape (n_fit_params, chip_dim[0], chip_dim[1])
+        """
+        print(f'Fitting {self.chip_dim[0] * self.chip_dim[1]} pixels with calibration curve...')
+        start_time = time.time()
+
+        # navigate through data using ordinary for loops
+        # self.fit_params = np.zeros((n_fit_params, self.chip_dim[0], self.chip_dim[1]))
+        # for row in range(self.chip_dim[0]):
+        #     for col in range(self.chip_dim[1]):
+        #         self.fit_params[:, row, col] = CalibReader.fit_pix(self.calib_data[:n_fit_points, row, col],
+        #                                                            range(n_fit_points))
+
+        # navigate through data using the np.apply_along_axis method
+        self.fit_params = np.apply_along_axis(CalibReader.fit_pix, 0, self.calib_data[:n_fit_points, :, :],
+                                              x=range(n_fit_points))
+
+        print(f'done, it took {time.time() - start_time:.1f} seconds')
 
 
 if __name__ == '__main__':
@@ -318,11 +339,15 @@ if __name__ == '__main__':
     # reader.plot_sigma_map()
 
     # TESTING SPACE
-    n_points = 40
-    pix_coord = (84, 242)
-    params, _ = reader.fit_pix(range(n_points), reader.calib_data[:n_points, pix_coord[0], pix_coord[1]])
-    tmp = [f'{par:.2f}' for par in params]
-    print(*tmp, sep='\n')
-    plt.plot(CalibReader.fit_funct_sin(range(n_points), *params), 'b.')
-    plt.plot(reader.calib_data[:n_points, pix_coord[0], pix_coord[1]], 'r+')
-    plt.show()
+    # n_points = 40
+    # pix_coord = (84, 242)
+    # params, _ = reader.fit_pix(range(n_points), reader.calib_data[:n_points, pix_coord[0], pix_coord[1]])
+    # tmp = [f'{par:.2f}' for par in params]
+    # print(*tmp, sep='\n')
+    # plt.plot(CalibReader.fit_funct_sin(range(n_points), *params), 'b.')
+    # plt.plot(reader.calib_data[:n_points, pix_coord[0], pix_coord[1]], 'r+')
+    # plt.show()
+    reader.fit_all_pixels_calib()
+    # TODO histogramy pro nafitovane parametry
+    # TODO heatmapy parametru
+    # TODO ukladani a nacitani fit parametru
