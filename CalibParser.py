@@ -1,5 +1,6 @@
 import time
 import numpy as np
+import pickle as pkl
 import matplotlib.pyplot as plt
 from pathlib import Path
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -51,6 +52,15 @@ class CalibReader:
         :return: Distance in mm
         """
         return 3e8 / frequency / maxphase / 2 * lst * 1000
+
+    @staticmethod
+    def dll_to_mm(nsteps):
+        """
+        Converts delay line step to mm.
+        :param nsteps: Number of DL steps to be converted.
+        :return: Equivalent distance in mm.
+        """
+        return 345 + np.array(nsteps) * 315
 
     def plot_heatmap(self, delay_step, data, sub_folder='', name='heatmap'):
         """
@@ -148,9 +158,9 @@ class CalibReader:
         print('Plotting mean value and standard deviations vs. DL step...')
 
         # plot std dev of one frame vs. DL step
-        plt.plot(self.stdev_vs_dll, 'bo-', linewidth=0.6, markersize=3)
+        plt.plot(self.dll_to_mm(range(self.n_delay_steps)), self.stdev_vs_dll, 'bo-', linewidth=0.6, markersize=3)
         plt.grid(True)
-        plt.xlabel('Delay line step [-]')
+        plt.xlabel('True distance [mm]')
         plt.ylabel('Measured distance std. deviation [mm]')
         plt.title(f'{self.chip}')
 
@@ -159,9 +169,9 @@ class CalibReader:
         plt.close()
 
         # plot mean value of one frame vs. DL step
-        plt.plot(self.mean_vs_dll, 'rs', markersize=3)
+        plt.plot(self.dll_to_mm(range(self.n_delay_steps)), self.mean_vs_dll, 'rs', markersize=3)
         plt.grid(True)
-        plt.xlabel('Delay line step [-]')
+        plt.xlabel('True distance [mm]')
         plt.ylabel('Measured distance mean [mm]')
         plt.title(f'{self.chip}')
 
@@ -171,7 +181,7 @@ class CalibReader:
 
     def plot_pixel_err(self, x, y, sub_folder=''):
         """
-        Plot measured value minus mean for all DL steps
+        Plot measured value minus mean for all DL steps for one pixel
         :param x: pixel x coordinate
         :param y: pixel y coordinate
         """
@@ -179,10 +189,10 @@ class CalibReader:
 
         err = np.array([self.calib_data[dll, x, y] for dll in range(self.n_delay_steps)])
         err = err - self.mean_vs_dll
-        plt.plot(err, 'cd-', linewidth=0.6, markersize=5)
+        plt.plot(self.dll_to_mm(range(self.n_delay_steps)), err, 'cd-', linewidth=0.6, markersize=5)
 
         plt.grid(True)
-        plt.xlabel('Delay line step [-]')
+        plt.xlabel('True distance [mm]')
         plt.ylabel('Measured distance -  mean [mm]')
         plt.title(f'{self.chip}, pixel [{x}, {y}]')
 
@@ -291,7 +301,7 @@ class CalibReader:
         param, _ = curve_fit(CalibReader.fit_funct_sin, x, y, p0=prior, bounds=bounds)
         return param
 
-    def fit_all_pixels_calib(self, n_fit_points=40, n_fit_params=5):
+    def fit_all_pixels_calib(self, n_fit_points=40, save_pickl=True):
         """
         Fits all pixels on the chip with fit_funct_sin formula
         :param n_fit_points: Number of DL steps to be used for the fit.
@@ -314,6 +324,9 @@ class CalibReader:
 
         print(f'done, it took {time.time() - start_time:.1f} seconds')
 
+        with open(self.output_path / 'fit_params' / self.chip + '_all_pix_fit.pkl', 'wb') as file:
+            pkl.dump(self.fit_params, file)
+
 
 if __name__ == '__main__':
     calib_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
@@ -323,7 +336,7 @@ if __name__ == '__main__':
     reader.load_calib_file()
 
     # PLOT THINGS
-    # reader.plot_mean_std()
+    reader.plot_mean_std()
 
     # reader.plot_extreme_pix(3, 5, 'max')
     # reader.plot_extreme_pix(3, 5, 'min')
@@ -347,7 +360,7 @@ if __name__ == '__main__':
     # plt.plot(CalibReader.fit_funct_sin(range(n_points), *params), 'b.')
     # plt.plot(reader.calib_data[:n_points, pix_coord[0], pix_coord[1]], 'r+')
     # plt.show()
-    reader.fit_all_pixels_calib()
+    # reader.fit_all_pixels_calib()
     # TODO histogramy pro nafitovane parametry
     # TODO heatmapy parametru
     # TODO ukladani a nacitani fit parametru
