@@ -26,7 +26,7 @@ class CalibReader:
         self.chip = '_'.join(self.file_path.parts[-1].split('_')[:2])
         self.mean_vs_dll = np.zeros((1))
         self.stdev_vs_dll = np.zeros((1))
-        self.fit_params = np.zeros((1))
+        self.fit_params_all = np.zeros((1))
 
     def load_calib_file(self):
         """
@@ -42,6 +42,15 @@ class CalibReader:
         self.stdev_vs_dll = np.array([self.calib_data[dll].std() for dll in range(self.n_delay_steps)])
 
         print('Calibration data loaded,', np.count_nonzero(self.calib_data), 'non-zero elements found.\n')
+
+    def load_fit_params_ext(self):
+        """
+        Load fit parameters from external file.
+        """
+        with open(self.output_path / 'fit_params' / (self.chip + '_all_pix_fit.pkl'), 'rb') as file:
+            self.fit_params_all = pkl.load(file)
+
+        print('Full set of fit parameters loaded from external file.')
 
     def compensate_rollover(self):
         """
@@ -307,14 +316,15 @@ class CalibReader:
         return p0 * np.sin(p1 * x + p2) + p3 + p4 * x
 
     @staticmethod
-    def fit_pix(x, y, check_plot=False):
+    def fit_pix(y, x, check_plot=False):
         """
         Fit output y of one pixel in all delay steps x with function fit_funct_sin.
         :param x: x-axis values for the fit (delay steps)
         :param y: y-axis data to be fitted (pixel output)
         :return: fit parameters
         """
-        # x = range(40)
+        # check_plot = False
+
         prior = np.array([150, .5, 1.6, 3500, 1])
         bounds = ([50, 0, 0, 0, 0], [250, 1, np.pi, 6000, 5])
         param, _ = curve_fit(CalibReader.fit_funct_sin, x, y, p0=prior, bounds=bounds)
@@ -326,7 +336,7 @@ class CalibReader:
 
         return param
 
-    def fit_all_pixels_calib(self, n_fit_points=40, save_pickl=True):
+    def fit_all_pixels_calib(self, n_fit_points=50, save_pickl=True):
         """
         Fits all pixels on the chip with fit_funct_sin formula
         :param n_fit_points: Number of DL steps to be used for the fit.
@@ -337,21 +347,26 @@ class CalibReader:
         start_time = time.time()
 
         # navigate through data using ordinary for loops
-        # self.fit_params = np.zeros((n_fit_params, self.chip_dim[0], self.chip_dim[1]))
+        # self.fit_params_all = np.zeros((n_fit_params, self.chip_dim[0], self.chip_dim[1]))
         # for row in range(self.chip_dim[0]):
         #     for col in range(self.chip_dim[1]):
-        #         self.fit_params[:, row, col] = CalibReader.fit_pix(self.calib_data[:n_fit_points, row, col],
+        #         self.fit_params_all[:, row, col] = CalibReader.fit_pix(self.calib_data[:n_fit_points, row, col],
         #                                                            range(n_fit_points))
 
         # navigate through data using the np.apply_along_axis method
-        self.fit_params = np.apply_along_axis(CalibReader.fit_pix, 0, self.calib_data[:n_fit_points, :, :],
-                                              x=range(n_fit_points))
+        self.fit_params_all = np.apply_along_axis(CalibReader.fit_pix, 0,
+                                                  self.calib_data[:n_fit_points, :, :],
+                                                  CalibReader.dll_to_mm(range(n_fit_points)),
+                                                  # check_plot=False
+                                                  )
+        # self.fit_params_all = np.apply_along_axis(CalibReader.fit_pix, 0, self.calib_data[:n_fit_points, :, :],
+        #                                       x=range(n_fit_points))
 
         print(f'done, it took {time.time() - start_time:.1f} seconds')
 
         if save_pickl:
-            with open(self.output_path / 'fit_params' / self.chip + '_all_pix_fit.pkl', 'wb') as file:
-                pkl.dump(self.fit_params, file)
+            with open(self.output_path / 'fit_params' / (self.chip + '_all_pix_fit.pkl'), 'wb') as file:
+                pkl.dump(self.fit_params_all, file)
 
             print('Fit parameters saved to a file')
 
@@ -362,15 +377,19 @@ if __name__ == '__main__':
 
     reader = CalibReader(calib_file_path, output_path)
     reader.load_calib_file()
+    reader.compensate_rollover()
+
+    reader.load_fit_params_ext()
+
+    # reader.fit_all_pixels_calib()
 
     # PLOT THINGS
-    reader.compensate_rollover()
-    reader.plot_mean_std()
+    # reader.plot_mean_std()
 
     # reader.plot_extreme_pix(3, 5, 'max')
     # reader.plot_extreme_pix(3, 5, 'min')
 
-    reader.plot_all('heat')
+    # reader.plot_all('heat')
 
     # reader.plot_all('hist')
 
@@ -381,16 +400,15 @@ if __name__ == '__main__':
     # reader.plot_sigma_map()
 
     # TESTING SPACE
+
+    print(reader.fit_params_all.shape)
+
     # n_points = 40
     # pix_coord = (84, 242)
-    # params, _ = reader.fit_pix(range(n_points), reader.calib_data[:n_points, pix_coord[0], pix_coord[1]])
-    # tmp = [f'{par:.2f}' for par in params]
-    # print(*tmp, sep='\n')
-    # plt.plot(CalibReader.fit_funct_sin(range(n_points), *params), 'b.')
-    # plt.plot(reader.calib_data[:n_points, pix_coord[0], pix_coord[1]], 'r+')
-    # plt.show()
-    # reader.fit_all_pixels_calib()
-    # reader.fit_pix(CalibReader.dll_to_mm(range(40)), reader.calib_data[:40, 10, 10])
+    # params = reader.fit_pix(
+    #                         reader.calib_data[:n_points, pix_coord[0], pix_coord[1]],
+    #                         CalibReader.dll_to_mm(range(n_points)),
+    #                         True)
+
     # TODO histogramy pro nafitovane parametry
     # TODO heatmapy parametru
-    # TODO ukladani a nacitani fit parametru
