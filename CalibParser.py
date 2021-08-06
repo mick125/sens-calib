@@ -3,8 +3,8 @@ import numpy as np
 import pickle as pkl
 import matplotlib.pyplot as plt
 from pathlib import Path
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.optimize import curve_fit
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
 class CalibReader:
@@ -135,7 +135,7 @@ class CalibReader:
         """
         self.plot_heatmap(delay_step, self.discr_map, sub_folder='discr_maps', name='discr-map')
 
-    def plot_hist(self, delay_step):
+    def plot_hist_meas_dist(self, delay_step):
         """
         Plot histogram of one frame for one DL step.
         :param delay_step: Delay line step
@@ -153,6 +153,27 @@ class CalibReader:
         plt.savefig(out_path, dpi=150)
         plt.close()
 
+    def plot_hist_fit_params(self):
+        """
+        Plots histograms of all fitted parameters
+        """
+        n_params = 5
+        fit_params = self.fit_params_all.reshape((n_params, -1))
+
+        for i in range(n_params):
+            fig, ax = plt.subplots()
+            n, bins, patches = plt.hist(x=fit_params[i], bins=40, rwidth=.85, color='m')
+
+            # set labels
+            ax.set_xlabel(f'p{i}')
+            ax.set_ylabel('Count [-]')
+            ax.set_title(f'{self.chip}, distribution of fit parameter p{i}\n' +
+                         r'y = p0.sin(p1.x + p2) + p3 + p4.x')
+
+            out_path = Path(self.output_path).joinpath('histograms', self.chip + f'_histogram_fit_par-{i}.png')
+            plt.savefig(out_path, dpi=150)
+            plt.close()
+
     def plot_all(self, plot_type):
         """
         Plots plot_type charts for all delay line steps.
@@ -168,7 +189,7 @@ class CalibReader:
         elif plot_type == 'discr':
             plot_func = self.plot_discr
         elif plot_type == 'hist':
-            plot_func = self.plot_hist
+            plot_func = self.plot_hist_meas_dist
         else:
             raise Exception('plot_type must be ' + ' or '.join(avail_plots))
 
@@ -401,7 +422,9 @@ if __name__ == '__main__':
 
     # TESTING SPACE
 
-    print(reader.fit_params_all.shape)
+    # print(reader.fit_params_all.shape)
+
+    reader.plot_hist_fit_params()
 
     # n_points = 40
     # pix_coord = (84, 242)
