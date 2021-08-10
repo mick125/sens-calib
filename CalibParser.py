@@ -4,6 +4,7 @@ import pickle as pkl
 import matplotlib.pyplot as plt
 from pathlib import Path
 from scipy.optimize import curve_fit
+from scipy.optimize import minimize
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
@@ -27,6 +28,7 @@ class CalibReader:
         self.mean_vs_dll = np.zeros((1))
         self.stdev_vs_dll = np.zeros((1))
         self.fit_params_all = np.zeros((1))
+        self.calib_params_temp = np.zeros((1))
 
     def load_calib_file(self):
         """
@@ -253,7 +255,7 @@ class CalibReader:
 
     def plot_extreme_pix(self, dll, n_pix, ext='max', plot=True):
         """
-        Picks a given number of pixels with extreme value for a given DL and plots the respective pix error plots
+        Picks a given number of pixels with extreme value for a given DL and plots the respective pix_x error plots
         :param n_pix: Number of extreme pixels to be found.
         :param dll: DL step.
         :param ext: Extreme, 'min' or 'max' (default).
@@ -327,6 +329,52 @@ class CalibReader:
         temp = np.array([self.calib_data[dll] - self.mean_vs_dll[dll] for dll in range(self.n_delay_steps)])
         self.sigma_map = np.std(temp, axis=0)
 
+    def fit_funct_inverse(self, x, pix_x, pix_y, calib_params, plot_test=False):
+        """
+        Inverse function to the fit function. To be used for calibrated sensor output. Uses the self.diff function
+        :param pix_x: Pixel x coordinate.
+        :param pix_y: Pixel y coordinate.
+        :param calib_params: Full set of calibration parameters for the sin function.
+        :param plot_test: Plot flag, test purposes.
+        :return: Measured distance after applying the calibration.
+        """
+        y = np.zeros_like(x)
+
+        # Minimize difference the 'measurement result'(x value) and calibration function result.
+        # The resulting input parameter of the calibration function is the actual distance.
+        for idx, x_value in enumerate(x):
+            res = minimize(self.diff, 7000, args=(x_value, pix_x, pix_y, calib_params),
+                           method='Nelder-Mead', tol=1e-2)
+            y[idx] = res.x[0]
+
+        if plot_test:
+            plt.plot(x, y)
+            plt.show()
+
+        return y
+
+    @staticmethod
+    def diff(x, a, pix_x, pix_y, calib_params):
+        """
+        Helper function for minimization in calculation of inverse function.
+        It has to be a scalar function due to requirements of sklearn.optimimize.minimize.
+        :param x: Value to be iterated.
+        :param a: Value to which the fit function result shall get close to.
+        :param pix_x: Pixel x coordinate.
+        :param pix_y: Pixel y coordinate.
+        :param calib_params: Full set of calibration parameters for the sin function.
+        :return: Quadratic deviation of fit function result and value a.
+        """
+
+        yt = CalibReader.fit_funct_sin(x,
+                                       calib_params[0, pix_x, pix_y],
+                                       calib_params[1, pix_x, pix_y],
+                                       calib_params[2, pix_x, pix_y],
+                                       calib_params[3, pix_x, pix_y],
+                                       calib_params[4, pix_x, pix_y],
+                                       )
+        return (yt - a)**2
+
     @staticmethod
     def fit_funct_sin(x, p0, p1, p2, p3, p4):
         """
@@ -391,14 +439,21 @@ class CalibReader:
 
             print('Fit parameters saved to a file')
 
+    def comp_degr(self):
+        """
+        Computes distance measurement degradation in each DL step for a given set of data.
+        The degradation is defined as std. dev. of measured distance in one full frame.
+        :return:
+        """
+
 
 if __name__ == '__main__':
     calib_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
     output_path = r'C:\Data\01_NFL\calib_data\Analysis\DRNU'
 
     reader = CalibReader(calib_file_path, output_path)
-    reader.load_calib_file()
-    reader.compensate_rollover()
+    # reader.load_calib_file()
+    # reader.compensate_rollover()
 
     reader.load_fit_params_ext()
 
@@ -420,11 +475,30 @@ if __name__ == '__main__':
     # reader.create_sigma_map()
     # reader.plot_sigma_map()
 
+    # reader.plot_hist_fit_params()
+
     # TESTING SPACE
 
     # print(reader.fit_params_all.shape)
 
-    reader.plot_hist_fit_params()
+    # x_val = np.empty((reader.n_delay_steps, *reader.chip_dim))
+
+    # for i in range(reader.n_delay_steps):
+    #     print(i, CalibReader.dll_to_mm(i))
+    #     x_val[i].fill(CalibReader.dll_to_mm(i))
+    #
+    # simul = CalibReader.fit_funct_sin(
+    #                                   x_val,
+    #                                   reader.fit_params_all[0],
+    #                                   reader.fit_params_all[1],
+    #                                   reader.fit_params_all[2],
+    #                                   reader.fit_params_all[3],
+    #                                   reader.fit_params_all[4],
+    #                                   )
+    # print(simul.shape)
+
+    print(reader.fit_funct_inverse(np.arange(3600, 15000, 100), 20, 30, reader.fit_params_all, True))
+    # print(reader.diff(np.ones(reader.chip_dim), np.full(reader.chip_dim, 11)))
 
     # n_points = 40
     # pix_coord = (84, 242)
