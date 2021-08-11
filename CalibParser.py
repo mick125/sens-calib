@@ -20,7 +20,7 @@ class CalibReader:
         self.file_path = Path(file_path)
         self.output_path = Path(output_path)
         self.raw_data = np.zeros((1, 1, 1))
-        self.calibrated_data = np.zeros((self.n_delay_steps, *self.chip_dim))
+        self.calibrated_data = []
         self.sigma_map = np.zeros((1, 1, 1))
         self.discr_map = np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1]))
         # self.discr_map = np.ma.masked_array(np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1])))
@@ -50,16 +50,16 @@ class CalibReader:
         """
         Load fit parameters from external file.
         """
-        with open(self.output_path / 'fit_params' / (self.chip + '_all_pix_fit.pkl'), 'rb') as file:
+        with open(self.output_path / 'pickl' / (self.chip + '_all_pix_fit.pkl'), 'rb') as file:
             self.fit_params_all = pkl.load(file)
 
         print('Full set of fit parameters loaded from external file.')
 
-    def load_calib_data_ext(self):
+    def load_calib_data_ext(self, pickl_id):
         """
         Load calibrated data from external file.
         """
-        with open(self.output_path / 'pickl' / (self.chip + '_all_pix_fit_calibr_data.pkl'), 'rb') as file:
+        with open(self.output_path / 'pickl' / f'{self.chip}_calibr_data_{pickl_id}.pkl', 'rb') as file:
             self.calibrated_data = pkl.load(file)
 
         print('Calibrated measurement data loaded from external file.')
@@ -450,31 +450,47 @@ class CalibReader:
 
             print('Fit parameters saved to a file')
 
-    def apply_calibration(self, calib_params, save_pickl=True):
+    def apply_calibration(self, calib_params, save_pickl=True, pickl_id=''):
         """
         Applies sin calibration on the measured data.
         :param calib_params: Set of fit parameters for fit_funct.
+        :param save_pickl: Save to pickle flag.
+        :param pickl_id: Pickle file extension.
         :return: Measured data with applied calibration.
         """
-        print(f'Fitting {self.chip_dim[0] * self.chip_dim[1]} pixels with calibration curve...')
+        print(f'Applying calibration for {self.chip_dim[0] * self.chip_dim[1]} pixels ...')
         start_time = time.time()
 
-        print(self.calibrated_data.shape)
-        # for dl in range(self.n_delay_steps):
+        calibrated_data = np.zeros((self.n_delay_steps, *self.chip_dim))
         for pix_x in range(self.chip_dim[0]):
             for pix_y in range(self.chip_dim[1]):
-                print(f'Applying calibration for pixel ({pix_x}, {pix_y})')
-                self.calibrated_data[:, pix_x, pix_y] = self.fit_funct_inverse(self.raw_data[:, pix_x, pix_y],
-                                                                               pix_x, pix_y, calib_params)
+                calibrated_data[:, pix_x, pix_y] = self.fit_funct_inverse(self.raw_data[:, pix_x, pix_y],
+                                                                          pix_x, pix_y, calib_params)
 
         print(f'done, it took {time.time() - start_time:.1f} seconds')
 
         if save_pickl:
-            with open(self.output_path / 'pickl' / (self.chip + '_all_pix_fit_calibr_data.pkl'), 'wb') as file:
-                pkl.dump(self.fit_params_all, file)
+            with open(self.output_path / 'pickl' / f'{self.chip}_calibr_data_{pickl_id}.pkl', 'wb') as file:
+                pkl.dump(calibrated_data, file)
 
             print('Data with applied calibration saved to a file')
 
+        return calibrated_data
+
+    @staticmethod
+    def reduce_fit_params(fit_params, par_list):
+        """
+        Replaces parameters in list with their mean.
+        :param fit_params: Set of fit parameters.
+        :param par_list: Indices of parameters to be replaced with their mean.
+        :return: New set of fit parameters with the same shape as fit_params
+        """
+        red_params = fit_params
+
+        for i in par_to_reduce:
+            red_params[i] = np.full(reader.chip_dim, np.mean(red_params[i]))
+
+        return red_params
 
     def comp_degr(self):
         """
@@ -515,30 +531,14 @@ if __name__ == '__main__':
 
     # reader.plot_hist_fit_params()
 
-    # TESTING SPACE
+    # ---- TESTING SPACE ----
 
-    # print(reader.fit_params_all.shape)
-
-    # x_val = np.empty((reader.n_delay_steps, *reader.chip_dim))
-
-    # for i in range(reader.n_delay_steps):
-    #     print(i, CalibReader.dll_to_mm(i))
-    #     x_val[i].fill(CalibReader.dll_to_mm(i))
-    #
-    # simul = CalibReader.fit_funct(
-    #                                   x_val,
-    #                                   reader.fit_params_all[0],
-    #                                   reader.fit_params_all[1],
-    #                                   reader.fit_params_all[2],
-    #                                   reader.fit_params_all[3],
-    #                                   reader.fit_params_all[4],
-    #                                   )
-    # print(simul.shape)
-
-    reader.apply_calibration(reader.fit_params_all)
+    reader.calibrated_data.append(reader.apply_calibration(reader.fit_params_all, 'all_par_fit'))
+    # reader.calibrated_data.append()
+    fit_par_2_red = reader.reduce_fit_params(reader.fit_params_all, [1, 2])
+    fit_par_3_red = reader.reduce_fit_params(reader.fit_params_all, [1, 2, 4])
 
     # print(reader.fit_funct_inverse(np.arange(3600, 15000, 100), 20, 30, reader.fit_params_all, True))
-    # print(reader.diff(np.ones(reader.chip_dim), np.full(reader.chip_dim, 11)))
 
     # n_points = 40
     # pix_coord = (84, 242)
@@ -547,5 +547,4 @@ if __name__ == '__main__':
     #                         CalibReader.dll_to_mm(range(n_points)),
     #                         True)
 
-    # TODO histogramy pro nafitovane parametry
     # TODO heatmapy parametru
