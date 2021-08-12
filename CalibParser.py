@@ -29,7 +29,6 @@ class CalibReader:
         self.mean_vs_dll = np.zeros((1))
         self.stdev_vs_dll = np.zeros((1))
         self.fit_params_all = np.zeros((1))
-        self.calib_params_temp = np.zeros((1))
 
     def load_raw_file(self):
         """
@@ -57,10 +56,10 @@ class CalibReader:
 
     def load_calib_data_ext(self, pickl_id):
         """
-        Load calibrated data from external file.
+        Loads calibrated data from external file and appends it to list self.calibrated_data.
         """
         with open(self.output_path / 'pickl' / f'{self.chip}_calibr_data_{pickl_id}.pkl', 'rb') as file:
-            self.calibrated_data = pkl.load(file)
+            self.calibrated_data.append(pkl.load(file))
 
         print('Calibrated measurement data loaded from external file.')
 
@@ -240,6 +239,8 @@ class CalibReader:
         plt.savefig(out_path, dpi=150)
         plt.close()
 
+        print('done')
+
     def plot_pixel_err(self, x, y, sub_folder=''):
         """
         Plot measured value minus mean for all DL steps for one pixel
@@ -377,7 +378,7 @@ class CalibReader:
         # The resulting input parameter of the calibration function is the actual distance.
         for idx, x_value in enumerate(x):
             res = minimize(self.diff, 7000, args=(x_value, pix_x, pix_y, calib_params),
-                           method='Nelder-Mead', tol=1e-2)
+                           method='Nelder-Mead', tol=1e-0)
             y[idx] = res.x[0]
 
         if plot_test:
@@ -396,22 +397,27 @@ class CalibReader:
         return p0 * np.sin(p1 * x + p2) + p3 + p4 * x
 
     @staticmethod
-    def fit_pix(y, x, check_plot=False):
+    def fit_pix(self, y, x, check_plot=False, remove_lin_part=False):
         """
         Fit output y of one pixel in all delay steps x with function fit_funct.
         :param x: x-axis values for the fit (delay steps)
         :param y: y-axis data to be fitted (pixel output)
+        :param check_plot: Flag, create check plot for test purposes.
+        :param remove_lin_part: Flag, subtract linear part from fit in check plot.
         :return: fit parameters
         """
-        # check_plot = False
-
         prior = np.array([150, .5, 1.6, 3500, 1])
         bounds = ([50, 0, 0, 0, 0], [250, 1, np.pi, 6000, 5])
         param, _ = curve_fit(CalibReader.fit_funct, x, y, p0=prior, bounds=bounds)
 
         if check_plot:
-            plt.plot(x, y, 'rd')
-            plt.plot(x, CalibReader.fit_funct(x, *param), 'b-')
+            if remove_lin_part:
+                lin_part = param[3] + param[4] * x
+            else:
+                lin_part = 0
+
+            plt.plot(x, y - lin_part, 'rd-')
+            plt.plot(x, CalibReader.fit_funct(x, *param) - lin_part, 'b-')
             plt.show()
 
         return param
@@ -422,6 +428,7 @@ class CalibReader:
         :param n_fit_points: Number of DL steps to be used for the fit.
         :param n_fit_params: Number of parameters the fit function does have.
         :return: Array with shape (n_fit_params, chip_dim[0], chip_dim[1])
+        :param save_pickl: Flag, save fit parameters to pickle file.
         """
         print(f'Fitting {self.chip_dim[0] * self.chip_dim[1]} pixels with calibration curve...')
         start_time = time.time()
@@ -463,6 +470,7 @@ class CalibReader:
 
         calibrated_data = np.zeros((self.n_delay_steps, *self.chip_dim))
         for pix_x in range(self.chip_dim[0]):
+            print(f'\tProcessing pixel row {pix_x} / {self.chip_dim[0]} ...')
             for pix_y in range(self.chip_dim[1]):
                 calibrated_data[:, pix_x, pix_y] = self.fit_funct_inverse(self.raw_data[:, pix_x, pix_y],
                                                                           pix_x, pix_y, calib_params)
@@ -487,18 +495,44 @@ class CalibReader:
         """
         red_params = fit_params
 
-        for i in par_to_reduce:
+        for i in par_list:
             red_params[i] = np.full(reader.chip_dim, np.mean(red_params[i]))
 
         return red_params
 
-    def comp_degr(self):
+    def plot_degr(self):
         """
-        Computes distance measurement degradation in each DL step for a given set of data.
+        Plots distance measurement degradation in each DL step for all sets of calibrated data.
         The degradation is defined as std. dev. of measured distance in one full frame.
         :return:
         """
-        pass
+        print('Plotting standard deviations of calibrated frame vs. DL step...')
+
+        colors = ['c', 'm', 'y', 'g']
+        labels = ['basic sin calib', '2 params fixed', '3 params fixed']
+        for i in range(len(self.calibrated_data)):
+            # stdev_vs_dll = np.array([self.calibrated_data[i][dll].std() for dll in range(self.n_delay_steps)])
+            # stdev_vs_dll = np.array([np.amin(self.calibrated_data[i][dll]) for dll in range(self.n_delay_steps)])
+            # stdev_vs_dll = np.array([np.amax(self.calibrated_data[i][dll]) for dll in range(self.n_delay_steps)])
+            mean_vs_dll = np.array([self.calibrated_data[i][dll].mean() for dll in range(self.n_delay_steps)])
+
+            stdev_vs_dll = mean_vs_dll - np.array([CalibReader.dll_to_mm(dl) for dl in range(50)])
+
+            # plot std dev of one frame vs. DL step
+            plt.plot(self.dll_to_mm(range(self.n_delay_steps)), stdev_vs_dll,
+                     f'{colors[i]}o-', linewidth=0.6, markersize=3, label=labels[i])
+
+        plt.grid(True)
+        plt.legend()
+        plt.xlabel('True distance [mm]')
+        plt.ylabel('Measured distance std. deviation [mm]')
+        plt.title(f'{self.chip}, calibration applied')
+
+        out_path = Path(self.output_path).joinpath(f'{self.chip}_stdev_calib-vs-dll.png')
+        plt.savefig(out_path, dpi=150)
+        plt.close()
+
+        print('done')
 
 
 if __name__ == '__main__':
@@ -509,9 +543,28 @@ if __name__ == '__main__':
     reader.load_raw_file()
     reader.compensate_rollover()
 
+    # fit calibration curve for all pixels
+    # reader.fit_all_pixels_calib()
+
+    # load calibration curve parameters from external file
     reader.load_fit_params_ext()
 
-    # reader.fit_all_pixels_calib()
+    # reduce number of fit parameters
+    # fit_par_red_2 = reader.reduce_fit_params(reader.fit_params_all, [1, 2])
+    # fit_par_red_3 = reader.reduce_fit_params(reader.fit_params_all, [1, 2, 4])
+
+    # apply calibration on raw data based on the above fit parameters
+    # reader.apply_calibration(reader.fit_params_all, True, 'sin_full') # already started
+    # reader.apply_calibration(fit_par_red_2, True, 'sin_red_2')
+    # reader.apply_calibration(fit_par_red_3, True, 'sin_red_3')
+
+    # load calibrated data from pickle files
+    reader.load_calib_data_ext('sin_full')
+    reader.load_calib_data_ext('sin_red_2')
+    reader.load_calib_data_ext('sin_red_3')
+
+    # reader.raw_data = reader.calibrated_data[0]
+    # reader.plot_all('hist')
 
     # PLOT THINGS
     # reader.plot_mean_std()
@@ -531,20 +584,40 @@ if __name__ == '__main__':
 
     # reader.plot_hist_fit_params()
 
+    reader.plot_degr()
+
     # ---- TESTING SPACE ----
 
-    reader.calibrated_data.append(reader.apply_calibration(reader.fit_params_all, 'all_par_fit'))
-    # reader.calibrated_data.append()
-    fit_par_2_red = reader.reduce_fit_params(reader.fit_params_all, [1, 2])
-    fit_par_3_red = reader.reduce_fit_params(reader.fit_params_all, [1, 2, 4])
+    # plt.plot(CalibReader.dll_to_mm(range(50)), reader.calibrated_data[0][:, 0, 4], 'd')
+    # plt.show()
+
+    # try f(f^-1(x))
+    # n_pix_x = 100
+    # n_pix_y = 100
+    # src = reader.raw_data[0, :n_pix_y, :n_pix_y]
+    # out = np.zeros_like(src)
+    # for pix_x in range(n_pix_x):
+    #     print(pix_x)
+    #     for pix_y in range(n_pix_y):
+    #         out[pix_x, pix_y] = reader.fit_funct_inverse([src[pix_x, pix_y]], pix_x, pix_y, reader.fit_params_all)
+    #         out[pix_x, pix_y] = CalibReader.fit_funct(out[pix_x, pix_y], *reader.fit_params_all[:, pix_x, pix_y])
+    # out -= src
+    # out = out.astype('int')
+    # print(np.amin(out), np.amax(out), np.mean(out), np.std(out))
+
 
     # print(reader.fit_funct_inverse(np.arange(3600, 15000, 100), 20, 30, reader.fit_params_all, True))
 
-    # n_points = 40
-    # pix_coord = (84, 242)
+    # n_points = 50
+    # pix_coord = (0, 4)
+    #
     # params = reader.fit_pix(
     #                         reader.raw_data[:n_points, pix_coord[0], pix_coord[1]],
     #                         CalibReader.dll_to_mm(range(n_points)),
     #                         True)
+
+    # print('synt', CalibReader.fit_funct(345, *params), '\norig', reader.raw_data[0, 0, 3])
+
+
 
     # TODO heatmapy parametru
