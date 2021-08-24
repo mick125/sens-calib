@@ -9,36 +9,40 @@ from scipy.optimize import minimize
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 
-class CalibReader:
+class CalibDataProcessor:
     """
     Reader for DRNU calibration file. Additional features like plotting are available, too.
     """
 
-    def __init__(self, file_path, output_path):
-        self.chip = '_'.join(Path(file_path).parts[-1].split('_')[:2])
+    def __init__(self, input_file_path, output_path):
+        self.chip = '_'.join(Path(input_file_path).parts[-1].split('_')[:2])
         self.chip_dim = (240, 320)
         self.n_delay_steps = 50
         self.maxphase = 3e4
-        self.file_path = Path(file_path)
+        self.input_file_path = Path(input_file_path)
         self.output_path = Path(output_path) / self.chip
         self.raw_data = np.zeros((1, 1, 1))
         self.calibrated_data = []
         self.sigma_map = np.zeros((1, 1, 1))
         self.discr_map = np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1]))
         # self.discr_map = np.ma.masked_array(np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1])))
-        self.mod_frequency = int(self.file_path.parts[-1].split('_')[2]) * 1000
+        self.mod_frequency = int(self.input_file_path.parts[-1].split('_')[2]) * 1000
         self.mean_vs_dll = np.zeros((1))
         self.stdev_vs_dll = np.zeros((1))
         self.fit_params_all = np.zeros((1))
+
+        # identification of data set. Integrated calibration data (50, 240, 320) or single frames (50, 25, 240, 320)
+        self.data_type = 'dl_step'
+        self.n_x_steps = self.n_delay_steps
+        self.x_ax_data = self.dll_to_mm(range(self.n_delay_steps))
 
     def create_folders(self):
         """
         Create all necessary folders for outputs.
         """
-        folders = ['discr_maps', 'distance', 'histograms', 'max_pix', 'min_pix', 'pickl']
+        folders = ['discr_maps', 'distance', 'histograms', 'max_pix', 'min_pix', 'pickl', 'mean_std']
         for folder in folders:
             try:
-                # os.makedirs(self.output_path / self.chip / folder)
                 os.makedirs(self.output_path / folder)
             except:
                 print(f'Folder "{folder}" already exists!')
@@ -50,7 +54,7 @@ class CalibReader:
         Parses and loads binary DRNU calibration file into variable self.raw_data.
         Calculates mean and std. deviation for each DL step.
         """
-        with open(self.file_path, 'rb') as file:
+        with open(self.input_file_path, 'rb') as file:
             self.raw_data = self.lsb_to_mm(np.fromfile(file, dtype=np.uint16), self.mod_frequency)
             # 50 delay line steps, 240 x 320 pixels
             self.raw_data = self.raw_data.reshape((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1]))
@@ -83,7 +87,7 @@ class CalibReader:
         Shift calibration points up after rollover to extend the calibration curve seamlessly.
         """
         rollover_dl = 0
-        rollover_shift = CalibReader.lsb_to_mm(self.maxphase, self.mod_frequency)
+        rollover_shift = CalibDataProcessor.lsb_to_mm(self.maxphase, self.mod_frequency)
 
         # find the DL step in which the rollover takes place
         for i in range(self.n_delay_steps - 1):
@@ -124,6 +128,11 @@ class CalibReader:
         :param sub_folder: optional subfolder to which the heat map shall be saved
         :param name: optional string which will be placed in the file name
         """
+        if self.data_type == 'dl_step':
+            plot_title = f'{self.chip}, DLL = {delay_step + 1}'
+        elif self.data_type == 'single_meas':
+            plot_title = f'{self.chip}, measurement no. = {delay_step + 1}'
+
         fig, ax = plt.subplots()
         # im = ax.imshow(data[delay_step], interpolation=None, origin='lower', cmap='brg')
         # im = ax.pcolor(data[delay_step], cmap='brg')
@@ -132,7 +141,7 @@ class CalibReader:
         # set labels
         ax.set_xlabel('Pixel [-]')
         ax.set_ylabel('Pixel [-]')
-        ax.set_title(f'{self.chip}, DLL = {delay_step + 1}')
+        ax.set_title(plot_title)
 
         # Create colorbar
         divider = make_axes_locatable(ax)
@@ -142,7 +151,7 @@ class CalibReader:
         # issue - colorbar title outside of plottable area
 
         out_path = Path(self.output_path).joinpath(sub_folder,
-                                                   self.chip + '_' + name + '_DLL-' + f'{delay_step + 1:02d}' + '.png')
+                                                   self.chip + '_' + name + '_step-' + f'{delay_step + 1:02d}' + '.png')
         plt.savefig(out_path, dpi=200)
         plt.close()
 
@@ -166,16 +175,21 @@ class CalibReader:
         Plot histogram of one frame for one DL step.
         :param delay_step: Delay line step
         """
+        if self.data_type == 'dl_step':
+            plot_title = f'{self.chip}, DLL = {delay_step + 1}'
+        elif self.data_type == 'single_meas':
+            plot_title = f'{self.chip}, measurement no. = {delay_step + 1}'
+
         fig, ax = plt.subplots()
         n, bins, patches = plt.hist(x=self.raw_data[delay_step].reshape((-1)), bins=40, rwidth=.85, color='b')
 
         # set labels
         ax.set_xlabel('Distance [mm]')
         ax.set_ylabel('Count [-]')
-        ax.set_title(f'{self.chip}, DLL = {delay_step + 1}')
+        ax.set_title(plot_title)
 
         out_path = Path(self.output_path).joinpath('histograms',
-                                                   self.chip + '_histogram_DLL-' + f'{delay_step + 1:02d}' + '.png')
+                                                   self.chip + '_histogram_step-' + f'{delay_step + 1:02d}' + '.png')
         plt.savefig(out_path, dpi=150)
         plt.close()
 
@@ -203,7 +217,7 @@ class CalibReader:
     def plot_all(self, plot_type):
         """
         Plots plot_type charts for all delay line steps.
-        :param plot_type: 'heat' or 'hist'
+        :param plot_type: 'heat', 'hist' or 'discr'
         """
         avail_plots = ['heat', 'discr', 'hist']
 
@@ -220,40 +234,47 @@ class CalibReader:
             raise Exception('plot_type must be ' + ' or '.join(avail_plots))
 
         # run the according plotting function in a loop
-        for dll in range(self.n_delay_steps):
+        for dll in range(self.n_x_steps):
             plot_func(dll)
 
         print('done')
 
-    def plot_mean_std(self):
+    def plot_mean_std(self, file_suff='vs-dll'):
         """
         Plots mean value and standard deviation for the whole frame for each DL step.
         Creates two plots, for mean and std dev.
         """
-        print('Plotting mean value and standard deviations vs. DL step...', end=' ')
+        print('Plotting mean value and standard deviations...', end=' ')
+
+        if self.data_type == 'dl_step':
+            xlabel = 'True distance [mm]'
+            x_ax_data = self.dll_to_mm(range(self.n_delay_steps))
+        elif self.data_type == 'single_meas':
+            xlabel = '# measurement'
+            x_ax_data = range(self.n_x_steps)
 
         # plot std dev of one frame vs. DL step
-        plt.plot(self.dll_to_mm(range(self.n_delay_steps)), self.stdev_vs_dll, 'bo-', linewidth=0.6, markersize=3)
+        plt.plot(x_ax_data, self.stdev_vs_dll, 'bo-', linewidth=0.6, markersize=3)
         plt.grid(True)
-        plt.xlabel('True distance [mm]')
+        plt.xlabel(xlabel)
         plt.ylabel('Measured distance std. deviation [mm]')
         plt.title(f'{self.chip}')
 
-        out_path = Path(self.output_path).joinpath(self.chip + '_stdev-vs-dll' + '.png')
+        out_path = Path(self.output_path).joinpath('mean_std', f'{self.chip}_stdev-{file_suff}.png')
         plt.savefig(out_path, dpi=150)
         plt.close()
 
         # plot mean value of one frame vs. DL step
-        plt.plot(self.dll_to_mm(range(self.n_delay_steps)), self.mean_vs_dll, 'rs', markersize=3)
+        plt.plot(x_ax_data, self.mean_vs_dll, 'rs', markersize=3)
         # plt.errorbar(self.dll_to_mm(range(self.n_delay_steps)), self.mean_vs_dll - lin_part, yerr=self.stdev_vs_dll,
         #              fmt='rs-', linewidth=0.6, markersize=3)
 
         plt.grid(True)
-        plt.xlabel('True distance [mm]')
+        plt.xlabel(xlabel)
         plt.ylabel('Measured distance mean [mm]')
         plt.title(f'{self.chip}')
 
-        out_path = Path(self.output_path).joinpath(self.chip + '_mean-vs-dll' + '.png')
+        out_path = Path(self.output_path).joinpath('mean_std', f'{self.chip}_mean-{file_suff}.png')
         plt.savefig(out_path, dpi=150)
         plt.close()
 
@@ -371,13 +392,13 @@ class CalibReader:
         :return: Quadratic deviation of fit function result and value a.
         """
 
-        yt = CalibReader.fit_funct(x,
-                                   calib_params[0, pix_x, pix_y],
-                                   calib_params[1, pix_x, pix_y],
-                                   calib_params[2, pix_x, pix_y],
-                                   calib_params[3, pix_x, pix_y],
-                                   calib_params[4, pix_x, pix_y],
-                                   )
+        yt = CalibDataProcessor.fit_funct(x,
+                                          calib_params[0, pix_x, pix_y],
+                                          calib_params[1, pix_x, pix_y],
+                                          calib_params[2, pix_x, pix_y],
+                                          calib_params[3, pix_x, pix_y],
+                                          calib_params[4, pix_x, pix_y],
+                                          )
         return (yt - a) ** 2
 
     def fit_funct_inverse(self, x, pix_x, pix_y, calib_params, plot_test=False):
@@ -426,7 +447,7 @@ class CalibReader:
         """
         prior = np.array([150, .5, 1.6, 3500, 1])
         bounds = ([50, 0, 0, 0, 0], [250, 1, np.pi, 16000, 5])
-        param, _ = curve_fit(CalibReader.fit_funct, x, y, p0=prior, bounds=bounds)
+        param, _ = curve_fit(CalibDataProcessor.fit_funct, x, y, p0=prior, bounds=bounds)
 
         if check_plot:
             if remove_lin_part:
@@ -435,7 +456,7 @@ class CalibReader:
                 lin_part = 0
 
             plt.plot(x, y - lin_part, 'rd-')
-            plt.plot(x, CalibReader.fit_funct(x, *param) - lin_part, 'b-')
+            plt.plot(x, CalibDataProcessor.fit_funct(x, *param) - lin_part, 'b-')
             plt.show()
 
         return param
@@ -456,17 +477,18 @@ class CalibReader:
         self.fit_params_all = np.zeros((n_fit_params, self.chip_dim[0], self.chip_dim[1]))
         for row in range(self.chip_dim[0]):
             for col in range(self.chip_dim[1]):
-                self.fit_params_all[:, row, col] = CalibReader.fit_pix(self.raw_data[:n_fit_points, row, col],
-                                                                       CalibReader.dll_to_mm(range(n_fit_points))
-                                                                       )
+                self.fit_params_all[:, row, col] = CalibDataProcessor.fit_pix(self.raw_data[:n_fit_points, row, col],
+                                                                              CalibDataProcessor.dll_to_mm(
+                                                                                  range(n_fit_points))
+                                                                              )
 
         # navigate through data using the np.apply_along_axis method
-        # self.fit_params_all = np.apply_along_axis(CalibReader.fit_pix, 0,
+        # self.fit_params_all = np.apply_along_axis(CalibDataProcessor.fit_pix, 0,
         #                                           self.raw_data[:n_fit_points, :, :],
-        #                                           CalibReader.dll_to_mm(range(n_fit_points)),
+        #                                           CalibDataProcessor.dll_to_mm(range(n_fit_points)),
         #                                           # check_plot=False
         #                                           )
-        # self.fit_params_all = np.apply_along_axis(CalibReader.fit_pix, 0, self.raw_data[:n_fit_points, :, :],
+        # self.fit_params_all = np.apply_along_axis(CalibDataProcessor.fit_pix, 0, self.raw_data[:n_fit_points, :, :],
         #                                       x=range(n_fit_points))
 
         print(f'done, it took {time.time() - start_time:.1f} seconds')
@@ -529,7 +551,7 @@ class CalibReader:
         print('Plotting standard deviations of calibrated frame vs. DL step...', end=' ')
 
         if rem_lin_part:
-            lin_part = CalibReader.dll_to_mm(np.arange(self.n_delay_steps))
+            lin_part = CalibDataProcessor.dll_to_mm(np.arange(self.n_delay_steps))
             label_file = '_lin-rem'
             label_title = ', linear component removed'
         else:
@@ -569,11 +591,11 @@ class CalibReader:
 
 
 if __name__ == '__main__':
-    calib_file_path = r'C:\Data\01_NFL\calib_data\W438_C269\W438_C269_10000_drnu_images.bin'
-    # calib_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
-    output_path = r'C:\Data\01_NFL\calib_data\Analysis\DRNU'
+    calib_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W438_C269\W438_C269_10000_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
+    output_path = r'C:\Data\01_NFL\NFL_data\Analysis\DRNU'
 
-    reader = CalibReader(calib_file_path, output_path)
+    reader = CalibDataProcessor(calib_file_path, output_path)
 
     # reader.create_folders()
 
@@ -591,7 +613,7 @@ if __name__ == '__main__':
     fit_par_red_3 = reader.reduce_fit_params(reader.fit_params_all, [1, 2, 4])
 
     # apply calibration on raw data based on the above fit parameters
-    reader.apply_calibration(reader.fit_params_all, True, 'sin_full') # already started
+    reader.apply_calibration(reader.fit_params_all, True, 'sin_full')  # already started
     reader.apply_calibration(fit_par_red_2, True, 'sin_red_2')
     reader.apply_calibration(fit_par_red_3, True, 'sin_red_3')
 
@@ -629,7 +651,7 @@ if __name__ == '__main__':
 
     # ---- TESTING SPACE ----
 
-    # plt.plot(CalibReader.dll_to_mm(range(50)), reader.calibrated_data[0][:, 0, 4], 'd')
+    # plt.plot(CalibDataProcessor.dll_to_mm(range(50)), reader.calibrated_data[0][:, 0, 4], 'd')
     # plt.show()
 
     # try f(f^-1(x))
@@ -641,7 +663,7 @@ if __name__ == '__main__':
     #     print(pix_x)
     #     for pix_y in range(n_pix_y):
     #         out[pix_x, pix_y] = reader.fit_funct_inverse([src[pix_x, pix_y]], pix_x, pix_y, reader.fit_params_all)
-    #         out[pix_x, pix_y] = CalibReader.fit_funct(out[pix_x, pix_y], *reader.fit_params_all[:, pix_x, pix_y])
+    #         out[pix_x, pix_y] = CalibDataProcessor.fit_funct(out[pix_x, pix_y], *reader.fit_params_all[:, pix_x, pix_y])
     # out -= src
     # out = out.astype('int')
     # print(np.amin(out), np.amax(out), np.mean(out), np.std(out))
@@ -653,9 +675,9 @@ if __name__ == '__main__':
     #
     # params = reader.fit_pix(
     #                         reader.raw_data[:n_points, pix_coord[0], pix_coord[1]],
-    #                         CalibReader.dll_to_mm(range(n_points)),
+    #                         CalibDataProcessor.dll_to_mm(range(n_points)),
     #                         True)
 
-    # print('synt', CalibReader.fit_funct(345, *params), '\norig', reader.raw_data[0, 0, 3])
+    # print('synt', CalibDataProcessor.fit_funct(345, *params), '\norig', reader.raw_data[0, 0, 3])
 
     # TODO heatmapy parametru
