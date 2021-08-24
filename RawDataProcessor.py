@@ -37,7 +37,7 @@ class RawDataProcessor(CalibDataProcessor):
             - distance
         """
         with h5py.File(self.input_file_path) as file:
-            self.raw_frames = np.array(file['DRNU/distances'])
+            self.raw_frames = self.lsb_to_mm(np.array(file['DRNU/distances']), frequency=self.mod_frequency)
             # 50 delay line steps, 25 frames, 240 x 320 pixels
 
         print('Raw measured data loaded')
