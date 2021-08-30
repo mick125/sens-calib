@@ -43,23 +43,23 @@ class RawDataProcessor(CalibDataProcessor):
 
     def load_raw_file(self):
         """
-        Load folowing data from file:
+        Load following data from file:
             - distance
         """
         with h5py.File(self.input_file_path) as file:
             self.raw_frames = self.lsb_to_mm(np.array(file['DRNU/distances']), frequency=self.mod_frequency)
-            # 50 delay line steps, 25 frames, 240 x 320 pixels
+            # example: 50 delay line steps, 25 frames, 240 x 320 pixels
 
         print('Raw measured data loaded')
 
     def load_raw_file_DCS(self):
         """
-        Load folowing data from file:
+        Load following data from file:
             - imagesDCS
         """
         with h5py.File(self.input_file_path) as file:
             self.dcs_frames = np.array(file['DRNU/imagesDCS'])
-            # 50 delay line steps, 25 frames, 240 x 320 pixels, 4 DCS'
+            # example: 50 delay line steps, 25 frames, 240 x 320 pixels, 4 DCS'
 
         print('Raw measured DCS data loaded')
 
@@ -76,9 +76,10 @@ class RawDataProcessor(CalibDataProcessor):
         """
         Takes DCS frames, coverts to mm and saves to self.raw_frames
         """
-        # self.dcs_frames.\
         print('Converting DCS signals to mm...')
+
         self.mm_from_DCS = np.zeros((self.n_delay_steps, self.n_recorded_frames, self.chip_dim[0], self.chip_dim[1]))
+
         for dl in range(self.n_delay_steps):
             print(f'\tDelay line {dl + 1}/{self.n_delay_steps}')
             for meas in range(self.n_recorded_frames):
@@ -142,26 +143,30 @@ class RawDataProcessor(CalibDataProcessor):
 
 if __name__ == '__main__':
     input_file_path = \
-        r'C:\Data\01_NFL\NFL_data\raw_data\W603_C096_41\W603_C096_10000_CalibData_DRNU_09062021_131457.hdf5'
-        # r'C:\Data\01_NFL\NFL_data\raw_data\W578_C132\W578_C132_10000_RawData_DRNU_27082021_170551.hdf5' # 75 frames per DLL, just DCS
+        r'C:\Data\01_NFL\NFL_data\raw_data\W578_C132\W578_C132_10000_RawData_DRNU_27082021_170551.hdf5' # 75 frames per DLL, just DCS
+        # r'C:\Data\01_NFL\NFL_data\raw_data\W603_C096_41\W603_C096_10000_CalibData_DRNU_09062021_131457.hdf5'
         # r'C:\Data\01_NFL\NFL_data\raw_data\W578_C132\W578_C132_10000_RawData_DRNU_27082021_162711.hdf5' # 50 frames per DLL, just DCS
-    n_frames = 25
+    n_frames = 75
     output_path = r'C:\Data\01_NFL\NFL_data\Analysis\Raw_recordings'
 
     reader = RawDataProcessor(input_file_path, output_path, n_frames)
 
-    # reader.create_folders()
+    reader.create_folders()
     # reader.get_file_info()
     # reader.load_raw_file()
-    # reader.load_raw_file_DCS()
-    # reader.convert_dcs()
-    reader.load_mm_from_dcs()
+    reader.load_raw_file_DCS()
+
+    start = time.time()
+    reader.convert_dcs()
+    print(f'It took {time.time() - start:.2f}')
+
+    # reader.load_mm_from_dcs()
 
     reader.pick_dll(2)
     reader.plot_all('heat')
     reader.plot_all('hist')
 
-    # [reader.plot_pixel_err(10, i) for i in range(50)]
+    [reader.plot_hist_pix_std(i) for i in range(reader.n_delay_steps)]
     #
     # # plot mean and stdev for all delay lines
     # start = time.time()
