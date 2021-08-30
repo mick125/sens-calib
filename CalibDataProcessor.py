@@ -288,9 +288,9 @@ class CalibDataProcessor:
         """
         print(f'Plotting deviation from mean for pixel [{x}, {y}]...', end=' ')
 
-        err = np.array([self.raw_data[dll, x, y] for dll in range(self.n_delay_steps)])
+        err = np.array([self.raw_data[step, x, y] for step in range(self.n_x_steps)])
         err = err - self.mean_vs_dll
-        plt.plot(self.dll_to_mm(range(self.n_delay_steps)), err, 'cd-', linewidth=0.6, markersize=5)
+        plt.plot(self.dll_to_mm(range(self.n_x_steps)), err, 'cd-', linewidth=0.6, markersize=5)
 
         plt.grid(True)
         plt.xlabel('True distance [mm]')
