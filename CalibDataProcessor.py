@@ -591,11 +591,11 @@ class CalibDataProcessor:
 
 
 if __name__ == '__main__':
-    calib_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W438_C269\W438_C269_10000_drnu_images.bin'
+    input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W438_C269\W438_C269_10000_drnu_images.bin'
     # input_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
     output_path = r'C:\Data\01_NFL\NFL_data\Analysis\DRNU'
 
-    reader = CalibDataProcessor(calib_file_path, output_path)
+    reader = CalibDataProcessor(input_file_path, output_path)
 
     # reader.create_folders()
 
