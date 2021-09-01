@@ -45,7 +45,7 @@ class CalibDataProcessor:
             try:
                 os.makedirs(self.output_path / folder)
             except:
-                print(f'Folder "{folder}" already exists!')
+                print(f'\tFolder "{folder}" already exists!')
 
         print('Required folders created')
 
@@ -59,10 +59,16 @@ class CalibDataProcessor:
             # 50 delay line steps, 240 x 320 pixels
             self.raw_data = self.raw_data.reshape((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1]))
 
-        self.mean_vs_dll = np.array([self.raw_data[dll].mean() for dll in range(self.n_delay_steps)])
-        self.stdev_vs_dll = np.array([self.raw_data[dll].std() for dll in range(self.n_delay_steps)])
+            self.calc_mean_std_all_dll()
 
         print('Calibration data loaded,', np.count_nonzero(self.raw_data), 'non-zero elements found.\n')
+
+    def calc_mean_std_all_dll(self):
+        """
+        Calculates mean and std dev for all DL steps.
+        """
+        self.mean_vs_dll = np.array([self.raw_data[dll].mean() for dll in range(self.n_delay_steps)])
+        self.stdev_vs_dll = np.array([self.raw_data[dll].std() for dll in range(self.n_delay_steps)])
 
     def load_fit_params_ext(self):
         """
@@ -101,15 +107,15 @@ class CalibDataProcessor:
             self.raw_data[i] += rollover_shift
 
     @staticmethod
-    def lsb_to_mm(lst, frequency, maxphase=3e4):
+    def lsb_to_mm(lsb, frequency, maxphase=3e4):
         """
         Converts LST units to mm.
-        :param lst: Input LST value to be converted
+        :param lsb: Input LST value to be converted
         :param frequency: Source modulation frequency
         :param maxphase: Max. LSB value
         :return: Distance in mm
         """
-        return 3e8 / frequency / maxphase / 2 * lst * 1000
+        return 3e8 / frequency / maxphase / 2 * lsb * 1000
 
     @staticmethod
     def dll_to_mm(nsteps):
@@ -181,7 +187,7 @@ class CalibDataProcessor:
             plot_title = f'{self.chip}, measurement no. = {delay_step + 1}'
 
         fig, ax = plt.subplots()
-        n, bins, patches = plt.hist(x=self.raw_data[delay_step].reshape((-1)), bins=40, rwidth=.85, color='b')
+        n, bins, patches = plt.hist(x=self.raw_data[delay_step].reshape((-1)), bins=100, rwidth=.85, color='b')
 
         # set labels
         ax.set_xlabel('Distance [mm]')
@@ -591,13 +597,14 @@ class CalibDataProcessor:
 
 
 if __name__ == '__main__':
-    input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W438_C269\W438_C269_10000_drnu_images.bin'
+    input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W578_C132\W578_C132_10000_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W438_C269\W438_C269_10000_drnu_images.bin'
     # input_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
     output_path = r'C:\Data\01_NFL\NFL_data\Analysis\DRNU'
 
     reader = CalibDataProcessor(input_file_path, output_path)
 
-    # reader.create_folders()
+    reader.create_folders()
 
     reader.load_raw_file()
     reader.compensate_rollover()
@@ -606,16 +613,16 @@ if __name__ == '__main__':
     # reader.fit_all_pixels_calib()
 
     # load calibration curve parameters from external file
-    reader.load_fit_params_ext()
+    # reader.load_fit_params_ext()
 
     # reduce number of fit parameters
-    fit_par_red_2 = reader.reduce_fit_params(reader.fit_params_all, [1, 2])
-    fit_par_red_3 = reader.reduce_fit_params(reader.fit_params_all, [1, 2, 4])
+    # fit_par_red_2 = reader.reduce_fit_params(reader.fit_params_all, [1, 2])
+    # fit_par_red_3 = reader.reduce_fit_params(reader.fit_params_all, [1, 2, 4])
 
     # apply calibration on raw data based on the above fit parameters
-    reader.apply_calibration(reader.fit_params_all, True, 'sin_full')  # already started
-    reader.apply_calibration(fit_par_red_2, True, 'sin_red_2')
-    reader.apply_calibration(fit_par_red_3, True, 'sin_red_3')
+    # reader.apply_calibration(reader.fit_params_all, True, 'sin_full')  # already started
+    # reader.apply_calibration(fit_par_red_2, True, 'sin_red_2')
+    # reader.apply_calibration(fit_par_red_3, True, 'sin_red_3')
 
     # load calibrated data from pickle files
     # reader.load_calib_data_ext('sin_full')
@@ -628,26 +635,26 @@ if __name__ == '__main__':
 
     # PLOT THINGS
     # --- Basic plotting
-    # reader.plot_mean_std()
+    reader.plot_mean_std()
     #
     # reader.plot_extreme_pix(3, 5, 'max')
     # reader.plot_extreme_pix(3, 5, 'min')
     #
-    # reader.plot_all('heat')
-    # reader.plot_all('hist')
+    reader.plot_all('heat')
+    reader.plot_all('hist')
     #
-    # reader.create_discr_map(2)
-    # reader.plot_all('discr')
+    reader.create_discr_map(2)
+    reader.plot_all('discr')
     #
-    # reader.create_sigma_map()
-    # reader.plot_sigma_map()
+    reader.create_sigma_map()
+    reader.plot_sigma_map()
 
     # --- Fit required
     # reader.plot_hist_fit_params()
 
     # --- Calibration application required
-    reader.plot_degr(rem_lin_part=True)
-    reader.plot_degr(rem_lin_part=False)
+    # reader.plot_degr(rem_lin_part=True)
+    # reader.plot_degr(rem_lin_part=False)
 
     # ---- TESTING SPACE ----
 
