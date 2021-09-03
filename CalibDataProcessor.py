@@ -108,6 +108,7 @@ class CalibDataProcessor:
         Shift calibration points up after rollover to extend the calibration curve seamlessly.
         """
         ua_dist = int(CalibDataProcessor.lsb_to_mm(self.maxphase, self.mod_frequency))
+        # ua_dist = 6727
         rollover_dls = [0] +\
                  [(i * ua_dist) // 315 + 1 for i in range(1, 3) if (i * ua_dist) // 315 + 1 < self.n_delay_steps] + \
                  [self.n_delay_steps]
@@ -129,6 +130,35 @@ class CalibDataProcessor:
         out_path = Path(self.output_path).joinpath('mean_std', f'{self.chip}_mean-rollover_comp.png')
         plt.savefig(out_path, dpi=150)
         plt.close('Rollover comparison plot created')
+
+    def rollover_fit(self):
+        """
+        Fits two rollovers vith linear function
+        :return: unambiguity distance
+        """
+
+        def func(x, a, b):
+            return a * (x - b)
+
+        roll_dls = [0] + list(np.array(self.find_rollover()) + 1)
+
+        res = []
+
+        for i in range(1, 3):
+            start_dl = roll_dls[i - 1]
+            end_dl = roll_dls[i] - 1
+            x_range = CalibDataProcessor.dll_to_mm(range(start_dl, end_dl))
+            y_range = self.mean_vs_dll[start_dl:end_dl]
+            par, _ = curve_fit(func, x_range, y_range)
+            res.append(par)
+            plt.plot(x_range, y_range, '+')
+            plt.plot(x_range, func(x_range, par[0], par[1]))
+        out = res[1][1] - res[0][1]
+        print(res)
+        print(f'{out:.0f}')
+        # plt.show()
+        return out
+
 
     def find_rollover(self):
         """
@@ -657,6 +687,7 @@ if __name__ == '__main__':
     reader.load_raw_file()
     # reader.compensate_rollover()
     reader.compare_rollovers()
+    # reader.rollover_fit()
     # print(reader.find_rollover())
 
     # ---- FITTING CALIBRATION FUNCTION ----
