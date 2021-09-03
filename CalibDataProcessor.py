@@ -2,6 +2,7 @@ import os
 import time
 import numpy as np
 import pickle as pkl
+import scipy.constants as sc
 import matplotlib.pyplot as plt
 from pathlib import Path
 from scipy.optimize import curve_fit
@@ -102,6 +103,33 @@ class CalibDataProcessor:
 
         print('Rollover will compensated.')
 
+    def compare_rollovers(self):
+        """
+        Shift calibration points up after rollover to extend the calibration curve seamlessly.
+        """
+        ua_dist = int(CalibDataProcessor.lsb_to_mm(self.maxphase, self.mod_frequency))
+        rollover_dls = [0] +\
+                 [(i * ua_dist) // 315 + 1 for i in range(1, 3) if (i * ua_dist) // 315 + 1 < self.n_delay_steps] + \
+                 [self.n_delay_steps]
+
+        for i in range(1, len(rollover_dls)):
+            x_values = CalibDataProcessor.dll_to_mm(range(rollover_dls[i - 1], rollover_dls[i])) - \
+                       ((i - 1) * ua_dist)
+            plt.plot(x_values, self.mean_vs_dll[rollover_dls[i - 1]:rollover_dls[i]], '+', markersize=4,
+                     label=f'rollover #{i - 1}')
+            print(f'rollover @{CalibDataProcessor.dll_to_mm(rollover_dls[i])} mm, dl {rollover_dls[i]}')
+
+        plt.grid(True)
+        plt.xlabel('Delay line [-]')
+        plt.xlabel('True distance [mm]')
+        plt.ylabel('Measured distance std. deviation [mm]')
+        plt.title(f'{self.chip}, comparison of rollovers')
+        plt.legend()
+
+        out_path = Path(self.output_path).joinpath('mean_std', f'{self.chip}_mean-rollover_comp.png')
+        plt.savefig(out_path, dpi=150)
+        plt.close('Rollover comparison plot created')
+
     def find_rollover(self):
         """
         Find delay lines in which rollover happens.
@@ -128,7 +156,7 @@ class CalibDataProcessor:
         :param maxphase: Max. LSB value
         :return: Distance in mm
         """
-        return 3e8 / frequency / maxphase / 2 * lsb * 1000
+        return sc.c / frequency / maxphase / 2 * lsb * 1000
 
     @staticmethod
     def dll_to_mm(nsteps):
@@ -627,8 +655,8 @@ if __name__ == '__main__':
     reader.create_folders()
 
     reader.load_raw_file()
-    reader.compensate_rollover()
-
+    # reader.compensate_rollover()
+    reader.compare_rollovers()
     # print(reader.find_rollover())
 
     # ---- FITTING CALIBRATION FUNCTION ----
