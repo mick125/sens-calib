@@ -15,18 +15,18 @@ class CalibDataProcessor:
     """
 
     def __init__(self, input_file_path, output_path):
+        self.input_file_path = Path(input_file_path)
         self.chip = '_'.join(Path(input_file_path).parts[-1].split('_')[:2])
+        self.mod_frequency = int(self.input_file_path.parts[-1].split('_')[2]) * 1000
         self.chip_dim = (240, 320)
         self.n_delay_steps = 50
         self.maxphase = 3e4
-        self.input_file_path = Path(input_file_path)
-        self.output_path = Path(output_path) / self.chip
+        self.output_path = Path(output_path) / f'{self.chip}_{self.mod_frequency/1e6:.0f}MHz'
         self.raw_data = np.zeros((1, 1, 1))
         self.calibrated_data = []
         self.sigma_map = np.zeros((1, 1, 1))
         self.discr_map = np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1]))
         # self.discr_map = np.ma.masked_array(np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1])))
-        self.mod_frequency = int(self.input_file_path.parts[-1].split('_')[2]) * 1000
         self.mean_vs_dll = np.zeros((1))
         self.stdev_vs_dll = np.zeros((1))
         self.fit_params_all = np.zeros((1))
@@ -92,19 +92,32 @@ class CalibDataProcessor:
         """
         Shift calibration points up after rollover to extend the calibration curve seamlessly.
         """
-        rollover_dl = 0
+        rollover_dls = self.find_rollover()
+        rollover_shift = CalibDataProcessor.lsb_to_mm(self.maxphase, self.mod_frequency)
+
+        for roll_dl in rollover_dls:
+            for i in range(roll_dl, self.n_delay_steps):
+                self.mean_vs_dll[i] += rollover_shift
+                self.raw_data[i] += rollover_shift
+
+        print('Rollover will compensated.')
+
+    def find_rollover(self):
+        """
+        Find delay lines in which rollover happens.
+        :return: list of dl lines with rollover
+        """
+        rollover_dls = []
         rollover_shift = CalibDataProcessor.lsb_to_mm(self.maxphase, self.mod_frequency)
 
         # find the DL step in which the rollover takes place
         for i in range(self.n_delay_steps - 1):
             if self.mean_vs_dll[i] - self.mean_vs_dll[i + 1] > rollover_shift * 0.9:
-                rollover_dl = i + 1
-                print('Rollover DL is', rollover_dl, '. Rollover will be compensated.')
-                break
+                rollover_dls.append(i + 1)
 
-        for i in range(rollover_dl, self.n_delay_steps):
-            self.mean_vs_dll[i] += rollover_shift
-            self.raw_data[i] += rollover_shift
+        print('Rollover happens at DLs', ', '.join(map(str,rollover_dls)))
+        return rollover_dls
+
 
     @staticmethod
     def lsb_to_mm(lsb, frequency, maxphase=3e4):
@@ -187,7 +200,10 @@ class CalibDataProcessor:
             plot_title = f'{self.chip}, measurement no. = {delay_step + 1}'
 
         fig, ax = plt.subplots()
-        n, bins, patches = plt.hist(x=self.raw_data[delay_step].reshape((-1)), bins=100, rwidth=.85, color='b')
+        range_min = np.amin(self.raw_data[delay_step].flatten())
+        range_max = range_min + 500
+        n, bins, patches = plt.hist(x=self.raw_data[delay_step].flatten(), bins=100, rwidth=.85, color='b',
+                                    range=[range_min, range_max])
 
         # set labels
         ax.set_xlabel('Distance [mm]')
@@ -597,9 +613,13 @@ class CalibDataProcessor:
 
 
 if __name__ == '__main__':
-    input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W578_C132\W578_C132_10000_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W418_C237\W418_C237_10000_drnu_images.bin'
+    input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W418_C237\W418_C237_24000_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W413_C243\W413_C243_10000_drnu_images_dualphase_4dcs.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W413_C243\W413_C243_24000_drnu_images_dualphase_4dcs.bin'
     # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W438_C269\W438_C269_10000_drnu_images.bin'
-    # input_file_path = r'C:\Data\01_NFL\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W455_C266\W455_C266_10000_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W578_C132\W578_C132_10000_drnu_images.bin'
     output_path = r'C:\Data\01_NFL\NFL_data\Analysis\DRNU'
 
     reader = CalibDataProcessor(input_file_path, output_path)
@@ -609,6 +629,9 @@ if __name__ == '__main__':
     reader.load_raw_file()
     reader.compensate_rollover()
 
+    # print(reader.find_rollover())
+
+    # ---- FITTING CALIBRATION FUNCTION ----
     # fit calibration curve for all pixels
     # reader.fit_all_pixels_calib()
 
@@ -633,21 +656,21 @@ if __name__ == '__main__':
     # reader.raw_data = reader.calibrated_data[0]
     # reader.plot_all('hist')
 
-    # PLOT THINGS
-    # --- Basic plotting
+    # ---- PLOT THINGS ----
+    # Basic plotting
     reader.plot_mean_std()
     #
     # reader.plot_extreme_pix(3, 5, 'max')
     # reader.plot_extreme_pix(3, 5, 'min')
     #
-    reader.plot_all('heat')
-    reader.plot_all('hist')
+    # reader.plot_all('heat')
+    # reader.plot_all('hist')
     #
-    reader.create_discr_map(2)
-    reader.plot_all('discr')
+    # reader.create_discr_map(2)
+    # reader.plot_all('discr')
     #
-    reader.create_sigma_map()
-    reader.plot_sigma_map()
+    # reader.create_sigma_map()
+    # reader.plot_sigma_map()
 
     # --- Fit required
     # reader.plot_hist_fit_params()
