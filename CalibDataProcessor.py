@@ -22,15 +22,16 @@ class CalibDataProcessor:
         self.chip_dim = (240, 320)
         self.n_delay_steps = 50
         self.maxphase = 3e4
-        self.output_path = Path(output_path) / f'{self.chip}_{self.mod_frequency/1e6:.0f}MHz'
+        self.output_path = Path(output_path) / f'{self.chip}_{self.mod_frequency / 1e6:.0f}MHz'
         self.raw_data = np.zeros((1, 1, 1))
         self.calibrated_data = []
         self.sigma_map = np.zeros((1, 1, 1))
         self.discr_map = np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1]))
         # self.discr_map = np.ma.masked_array(np.zeros((self.n_delay_steps, self.chip_dim[0], self.chip_dim[1])))
-        self.mean_vs_dll = np.zeros((1))
-        self.stdev_vs_dll = np.zeros((1))
-        self.fit_params_all = np.zeros((1))
+        self.mean_vs_dll = np.zeros((1,))
+        self.stdev_vs_dll = np.zeros((1,))
+        self.fit_params_all = np.zeros((1,))
+        self.rollover_fit = []
 
         # identification of data set. Integrated calibration data (50, 240, 320) or single frames (50, 25, 240, 320)
         self.data_type = 'dl_step'
@@ -93,7 +94,7 @@ class CalibDataProcessor:
         """
         Shift calibration points up after rollover to extend the calibration curve seamlessly.
         """
-        rollover_dls = self.find_rollover()
+        rollover_dls = self.find_rollover_dls()
         rollover_shift = CalibDataProcessor.lsb_to_mm(self.maxphase, self.mod_frequency)
 
         for roll_dl in rollover_dls:
@@ -103,45 +104,82 @@ class CalibDataProcessor:
 
         print('Rollover will compensated.')
 
-    def compare_rollovers(self):
+    def plot_overlayed_rollovers(self, ua_dist=0):
+        """
+        Wrapper for plotting overlayed rollovers using method compare_rollovers.
+        :param ua_dist: unambiguity distance
+        """
+        self.compare_rollovers(self.mean_vs_dll, ua_dist=ua_dist)
+
+    def plot_overlayed_4order_wave_mean(self, ua_dist):
+        """
+        Wrapper for plotting overlayed waves of 4th order oscillation using method compare_rollovers.
+        :param ua_dist: unambiguity distance
+        """
+        self.compare_rollovers(self.mean_vs_dll, file_suff='4thOrdr',
+                               title_suff='4th order wave', ua_dist=ua_dist / 4, shift_y=True)
+
+    def plot_overlayed_4order_wave_pix(self, pix_x, pix_y, ua_dist):
+        """
+        Wrapper for plotting overlayed waves of 4th order oscillation using method compare_rollovers.
+        :param pix_x: pixel x-coordinate
+        :param pix_y: pixel y-coordinate
+        :param ua_dist: unambiguity distance
+        """
+        self.compare_rollovers(self.raw_data[:, pix_x, pix_y],
+                               file_suff=f'4thOrdr_Pix-{pix_x:03d}-{pix_y:03d}',
+                               title_suff=f'4th order wave, pixel {pix_x}; {pix_y}',
+                               ua_dist=ua_dist / 4, shift_y=True)
+
+    def compare_rollovers(self, data, file_suff='comp', title_suff='rollover', ua_dist=0., shift_y=False):
         """
         Shift calibration points up after rollover to extend the calibration curve seamlessly.
+        :param data: data to be plotted, either mean per frame or single pixel measurement vs. DL line
+        :param file_suff: filen mane suffix of output image
+        :param title_suff: legend description and suffix of plot title
+        :param ua_dist: unambiguous distance; either external input or will be calculated from modulation frequency
+        :param: shift_y: flag whether resulting curve shall be shifted along y-axis
         """
-        ua_dist = int(CalibDataProcessor.lsb_to_mm(self.maxphase, self.mod_frequency))
-        # ua_dist = 6727
-        rollover_dls = [0] +\
-                 [(i * ua_dist) // 315 + 1 for i in range(1, 3) if (i * ua_dist) // 315 + 1 < self.n_delay_steps] + \
-                 [self.n_delay_steps]
+        ua_dist = int(CalibDataProcessor.lsb_to_mm(self.maxphase, self.mod_frequency)) if not ua_dist else ua_dist
+        rollover_dls = [0] + \
+                       [int((i * ua_dist) // 315 + 1) for i in range(1, 4) if
+                        (i * ua_dist) // 315 + 1 < self.n_delay_steps] + \
+                       [self.n_delay_steps]
 
         for i in range(1, len(rollover_dls)):
             x_values = CalibDataProcessor.dll_to_mm(range(rollover_dls[i - 1], rollover_dls[i])) - \
                        ((i - 1) * ua_dist)
-            plt.plot(x_values, self.mean_vs_dll[rollover_dls[i - 1]:rollover_dls[i]], '+', markersize=4,
-                     label=f'rollover #{i - 1}')
-            print(f'rollover @{CalibDataProcessor.dll_to_mm(rollover_dls[i])} mm, dl {rollover_dls[i]}')
+            y_values = data[rollover_dls[i - 1]:rollover_dls[i]] - \
+                       (shift_y * (i - 1) * self.rollover_fit[0][0] * ua_dist)
+            plt.plot(x_values, y_values, '+', markersize=4,
+                     label=f'{title_suff} #{i - 1}')
+            # print(f'rollover @{CalibDataProcessor.dll_to_mm(rollover_dls[i]):>6} mm, dl {rollover_dls[i]}')
 
+        if shift_y:
+            plt.xlim([0, ua_dist * 1.3])
+            plt.ylim([0, ua_dist * 1.3])
         plt.grid(True)
         plt.xlabel('Delay line [-]')
         plt.xlabel('True distance [mm]')
-        plt.ylabel('Measured distance std. deviation [mm]')
-        plt.title(f'{self.chip}, comparison of rollovers')
+        plt.ylabel('Measured mean distance [mm]')
+        plt.title(f'{self.chip}, comparison - {title_suff}')
         plt.legend()
 
-        out_path = Path(self.output_path).joinpath('mean_std', f'{self.chip}_mean-rollover_comp.png')
+        out_path = Path(self.output_path).joinpath('mean_std', f'{self.chip}_mean-rollover_{file_suff}.png')
         plt.savefig(out_path, dpi=150)
-        plt.close('Rollover comparison plot created')
+        plt.close()
+        print(f'{title_suff} comparison plot created')
 
-    def rollover_fit(self):
+    def fit_rollover(self):
         """
-        Fits two rollovers vith linear function
+        Fits two rollovers with linear function and determines unambiguity distance.
         :return: unambiguity distance
         """
 
         def func(x, a, b):
             return a * (x - b)
 
-        roll_dls = [0] + list(np.array(self.find_rollover()) + 1)
-
+        roll_dls = [0] + list(np.array(self.find_rollover_dls()) + 1)
         res = []
 
         for i in range(1, 3):
@@ -150,17 +188,17 @@ class CalibDataProcessor:
             x_range = CalibDataProcessor.dll_to_mm(range(start_dl, end_dl))
             y_range = self.mean_vs_dll[start_dl:end_dl]
             par, _ = curve_fit(func, x_range, y_range)
-            res.append(par)
-            plt.plot(x_range, y_range, '+')
-            plt.plot(x_range, func(x_range, par[0], par[1]))
-        out = res[1][1] - res[0][1]
-        print(res)
-        print(f'{out:.0f}')
+            self.rollover_fit.append(par)
+            # plotting for debug purposes
+            # plt.plot(x_range, y_range, '+')
+            # plt.plot(x_range, func(x_range, par[0], par[1]))
+
+        out = self.rollover_fit[1][1] - self.rollover_fit[0][1]
+        print(f'Unambiguity distance obtained from linear fit is {out:.0f} mm.')
         # plt.show()
         return out
 
-
-    def find_rollover(self):
+    def find_rollover_dls(self):
         """
         Find delay lines in which rollover happens.
         :return: list of dl lines with rollover
@@ -173,9 +211,8 @@ class CalibDataProcessor:
             if self.mean_vs_dll[i] - self.mean_vs_dll[i + 1] > rollover_shift * 0.9:
                 rollover_dls.append(i + 1)
 
-        print('Rollover happens at DLs', ', '.join(map(str,rollover_dls)))
+        print('Rollover happens at DLs', ', '.join(map(str, rollover_dls)))
         return rollover_dls
-
 
     @staticmethod
     def lsb_to_mm(lsb, frequency, maxphase=3e4):
@@ -686,9 +723,10 @@ if __name__ == '__main__':
 
     reader.load_raw_file()
     # reader.compensate_rollover()
-    reader.compare_rollovers()
-    # reader.rollover_fit()
-    # print(reader.find_rollover())
+    ua_dist = reader.fit_rollover()
+    # reader.plot_overlayed_rollovers(ua_dist)
+    # reader.plot_overlayed_4order_wave_mean(ua_dist)
+    [reader.plot_overlayed_4order_wave_pix(x, y, ua_dist) for x in range(10, 20) for y in range(20, 25)]
 
     # ---- FITTING CALIBRATION FUNCTION ----
     # fit calibration curve for all pixels
@@ -717,7 +755,7 @@ if __name__ == '__main__':
 
     # ---- PLOT THINGS ----
     # Basic plotting
-    reader.plot_mean_std()
+    # reader.plot_mean_std()
     #
     # reader.plot_extreme_pix(3, 5, 'max')
     # reader.plot_extreme_pix(3, 5, 'min')
