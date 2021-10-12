@@ -41,6 +41,7 @@ class CalibDataProcessor:
     def create_folders(self):
         """
         Create all necessary folders for outputs.
+        Existing folder will be ignored.
         """
         folders = ['discr_maps', 'distance', 'histograms', 'max_pix', 'min_pix', 'pickl', 'mean_std']
         for folder in folders:
@@ -84,6 +85,8 @@ class CalibDataProcessor:
     def load_calib_data_ext(self, pickl_id):
         """
         Loads calibrated data from external file and appends it to list self.calibrated_data.
+        Each element of self.calibrated_data represents a full set calibration data.
+        :param pickl_id characteristic part of calibration data pickle file
         """
         with open(self.output_path / 'pickl' / f'{self.chip}_calibr_data_{pickl_id}.pkl', 'rb') as file:
             self.calibrated_data.append(pkl.load(file))
@@ -133,7 +136,7 @@ class CalibDataProcessor:
 
     def compare_rollovers(self, data, file_suff='comp', title_suff='rollover', ua_dist=0., shift_y=False):
         """
-        Shift calibration points up after rollover to extend the calibration curve seamlessly.
+        Plots overlayed periods of 4th order waves.
         :param data: data to be plotted, either mean per frame or single pixel measurement vs. DL line
         :param file_suff: filen mane suffix of output image
         :param title_suff: legend description and suffix of plot title
@@ -172,7 +175,8 @@ class CalibDataProcessor:
 
     def fit_rollover(self):
         """
-        Fits two rollovers with linear function and determines unambiguity distance.
+        Fits two rollovers with linear functions and based on fit parameters determines unambiguity distance.
+        Two rollovers must be present in the data.
         :return: unambiguity distance
         """
 
@@ -201,6 +205,8 @@ class CalibDataProcessor:
     def find_rollover_dls(self):
         """
         Find delay lines in which rollover happens.
+        The function is designed to search for multiple rollovers in one distance curve.
+        Rollover is identified based on 90% drop in the distance curve.
         :return: list of dl lines with rollover
         """
         rollover_dls = []
@@ -312,7 +318,7 @@ class CalibDataProcessor:
 
     def plot_hist_fit_params(self):
         """
-        Plots histograms of all fitted parameters
+        Plots distributions of all fitted parameters
         """
         n_params = 5
         fit_params = self.fit_params_all.reshape((n_params, -1))
@@ -360,6 +366,7 @@ class CalibDataProcessor:
         """
         Plots mean value and standard deviation for the whole frame for each DL step.
         Creates two plots, for mean and std dev.
+        :param file_suff: Trailing string of output file name.
         """
         print('Plotting mean value and standard deviations...', end=' ')
 
@@ -383,9 +390,8 @@ class CalibDataProcessor:
 
         # plot mean value of one frame vs. DL step
         plt.plot(x_ax_data, self.mean_vs_dll, 'rs', markersize=3)
-        # plt.errorbar(self.dll_to_mm(range(self.n_delay_steps)), self.mean_vs_dll - lin_part, yerr=self.stdev_vs_dll,
-        #              fmt='rs-', linewidth=0.6, markersize=3)
 
+        # plot settings
         plt.grid(True)
         plt.xlabel(xlabel)
         plt.ylabel('Measured distance mean [mm]')
@@ -402,6 +408,7 @@ class CalibDataProcessor:
         Plot measured value minus mean for all DL steps for one pixel
         :param x: pixel x coordinate
         :param y: pixel y coordinate
+        :param sub_folder: subfolder in output path
         """
         print(f'Plotting deviation from mean for pixel [{x}, {y}]...', end=' ')
 
@@ -423,8 +430,8 @@ class CalibDataProcessor:
     def plot_extreme_pix(self, dll, n_pix, ext='max', plot=True):
         """
         Picks a given number of pixels with extreme value for a given DL and plots the respective pix_x error plots
-        :param n_pix: Number of extreme pixels to be found.
         :param dll: DL step.
+        :param n_pix: Number of extreme pixels to be found.
         :param ext: Extreme, 'min' or 'max' (default).
         :param plot: Plotting flag. If False, no plots are created (just pixel coordinates returned).
         :return: Two arrays for x and y pixel coordinate.
@@ -449,7 +456,7 @@ class CalibDataProcessor:
 
     def plot_sigma_map(self):
         """
-        Plots sigma heat map.
+        Plots sigma heat map. It is a map occupied with values of standard deviation.
         Method create_sigma_map has to be run prior to this one.
         """
         fig, ax = plt.subplots()
@@ -491,7 +498,7 @@ class CalibDataProcessor:
 
     def create_sigma_map(self):
         """
-        Creates a map of std. devs for each pixel based on measured values ove all DL steps.
+        Creates a map of std. devs for each pixel based on measured values over all DL steps.
         """
         temp = np.array([self.raw_data[dll] - self.mean_vs_dll[dll] for dll in range(self.n_delay_steps)])
         self.sigma_map = np.std(temp, axis=0)
@@ -600,6 +607,7 @@ class CalibDataProcessor:
                                                                               )
 
         # navigate through data using the np.apply_along_axis method
+        # it kind of works, but it is not a very clear solution
         # self.fit_params_all = np.apply_along_axis(CalibDataProcessor.fit_pix, 0,
         #                                           self.raw_data[:n_fit_points, :, :],
         #                                           CalibDataProcessor.dll_to_mm(range(n_fit_points)),
@@ -610,6 +618,7 @@ class CalibDataProcessor:
 
         print(f'done, it took {time.time() - start_time:.1f} seconds')
 
+        # save results to pickle
         if save_pickl:
             with open(self.output_path / 'pickl' / (self.chip + '_all_pix_fit_params.pkl'), 'wb') as file:
                 pkl.dump(self.fit_params_all, file)
@@ -618,7 +627,7 @@ class CalibDataProcessor:
 
     def apply_calibration(self, calib_params, save_pickl=True, pickl_id=''):
         """
-        Applies sin calibration on the measured data.
+        Applies sin calibration on the measured data and creates maps of truly calibrated distance measurements.
         :param calib_params: Set of fit parameters for fit_funct.
         :param save_pickl: Save to pickle flag.
         :param pickl_id: Pickle file extension.
@@ -636,6 +645,7 @@ class CalibDataProcessor:
 
         print(f'done, it took {time.time() - start_time:.1f} seconds')
 
+        # save results to pickle
         if save_pickl:
             with open(self.output_path / 'pickl' / f'{self.chip}_calibr_data_{pickl_id}.pkl', 'wb') as file:
                 pkl.dump(calibrated_data, file)
@@ -679,8 +689,6 @@ class CalibDataProcessor:
         colors = ['b', 'c', 'm', 'y', 'g']
         labels = ['basic sin calib', '2 params fixed', '3 params fixed']
         for i in range(len(self.calibrated_data)):
-            # stdev_vs_dll = np.array([np.amin(self.calibrated_data[i][dll]) for dll in range(self.n_delay_steps)])
-            # stdev_vs_dll = np.array([np.amax(self.calibrated_data[i][dll]) for dll in range(self.n_delay_steps)])
             mean_vs_dll = np.array([self.calibrated_data[i][dll].mean() for dll in range(self.n_delay_steps)])
             stdev_vs_dll = np.array([self.calibrated_data[i][dll].std() for dll in range(self.n_delay_steps)])
 
@@ -693,6 +701,7 @@ class CalibDataProcessor:
                 plt.plot(self.dll_to_mm(range(self.n_delay_steps)), mean_vs_dll,
                          f'{colors[i]}o-', linewidth=0.6, markersize=3, label=labels[i])
 
+        # plot settings
         plt.grid(True)
         if len(self.calibrated_data) > 1:
             plt.legend()
@@ -708,6 +717,9 @@ class CalibDataProcessor:
 
 
 if __name__ == '__main__':
+
+    # EXAMPLE USAGE
+
     # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W418_C237\W418_C237_10000_drnu_images.bin'
     input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W418_C237\W418_C237_24000_drnu_images.bin'
     # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W413_C243\W413_C243_10000_drnu_images_dualphase_4dcs.bin'
@@ -722,11 +734,13 @@ if __name__ == '__main__':
     reader.create_folders()
 
     reader.load_raw_file()
-    # reader.compensate_rollover()
-    ua_dist = reader.fit_rollover()
+    reader.compensate_rollover()
+    # ua_dist = reader.fit_rollover()
     # reader.plot_overlayed_rollovers(ua_dist)
     # reader.plot_overlayed_4order_wave_mean(ua_dist)
-    [reader.plot_overlayed_4order_wave_pix(x, y, ua_dist) for x in range(10, 20) for y in range(20, 25)]
+
+    # plot ovelayed rollovers for range of pixels
+    # [reader.plot_overlayed_4order_wave_pix(x, y, ua_dist) for x in range(10, 20) for y in range(20, 30)]
 
     # ---- FITTING CALIBRATION FUNCTION ----
     # fit calibration curve for all pixels
@@ -755,48 +769,34 @@ if __name__ == '__main__':
 
     # ---- PLOT THINGS ----
     # Basic plotting
-    # reader.plot_mean_std()
-    #
-    # reader.plot_extreme_pix(3, 5, 'max')
-    # reader.plot_extreme_pix(3, 5, 'min')
-    #
-    # reader.plot_all('heat')
-    # reader.plot_all('hist')
-    #
-    # reader.create_discr_map(2)
-    # reader.plot_all('discr')
-    #
-    # reader.create_sigma_map()
-    # reader.plot_sigma_map()
+    reader.plot_mean_std()
 
-    # --- Fit required
+    reader.plot_extreme_pix(3, 5, 'max')
+    reader.plot_extreme_pix(3, 5, 'min')
+
+    reader.plot_all('heat')
+    reader.plot_all('hist')
+
+    reader.create_discr_map(2)
+    reader.plot_all('discr')
+
+    reader.create_sigma_map()
+    reader.plot_sigma_map()
+
+    # --- Calibration fit required: distribution of fit parameters
     # reader.plot_hist_fit_params()
 
-    # --- Calibration application required
+    # --- Calibration application required: degradation plot
     # reader.plot_degr(rem_lin_part=True)
     # reader.plot_degr(rem_lin_part=False)
 
     # ---- TESTING SPACE ----
 
+    # make a quick test plot
     # plt.plot(CalibDataProcessor.dll_to_mm(range(50)), reader.calibrated_data[0][:, 0, 4], 'd')
     # plt.show()
 
-    # try f(f^-1(x))
-    # n_pix_x = 100
-    # n_pix_y = 100
-    # src = reader.raw_data[0, :n_pix_y, :n_pix_y]
-    # out = np.zeros_like(src)
-    # for pix_x in range(n_pix_x):
-    #     print(pix_x)
-    #     for pix_y in range(n_pix_y):
-    #         out[pix_x, pix_y] = reader.fit_funct_inverse([src[pix_x, pix_y]], pix_x, pix_y, reader.fit_params_all)
-    #         out[pix_x, pix_y] = CalibDataProcessor.fit_funct(out[pix_x, pix_y], *reader.fit_params_all[:, pix_x, pix_y])
-    # out -= src
-    # out = out.astype('int')
-    # print(np.amin(out), np.amax(out), np.mean(out), np.std(out))
-
-    # print(reader.fit_funct_inverse(np.arange(3600, 15000, 100), 20, 30, reader.fit_params_all, True))
-
+    # fit a single pixel with calibration function and plot the result
     # n_points = 50
     # pix_coord = (0, 4)
     #
@@ -804,7 +804,3 @@ if __name__ == '__main__':
     #                         reader.raw_data[:n_points, pix_coord[0], pix_coord[1]],
     #                         CalibDataProcessor.dll_to_mm(range(n_points)),
     #                         True)
-
-    # print('synt', CalibDataProcessor.fit_funct(345, *params), '\norig', reader.raw_data[0, 0, 3])
-
-    # TODO heatmapy parametru

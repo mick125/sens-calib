@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 class RawDataProcessor(CalibDataProcessor):
     """
     Reading and processing of raw data.
+    Raw means single frames without averaging and DCS values.
     """
     def __init__(self, input_file_path, output_path):
         super().__init__(input_file_path, output_path)
@@ -22,7 +23,7 @@ class RawDataProcessor(CalibDataProcessor):
 
         self.dcs_frames = np.zeros((1, ))
 
-        # set class to single measurement mode
+        # set class variables in order to set the class to single measurement mode
         self.data_type = 'single_meas'
         self.n_recorded_frames = 0
         self.n_x_steps = 0
@@ -42,7 +43,7 @@ class RawDataProcessor(CalibDataProcessor):
 
     def load_raw_file(self):
         """
-        Load following data from file:
+        Load following data from input file:
             - distance
         """
         with h5py.File(self.input_file_path) as file:
@@ -56,7 +57,7 @@ class RawDataProcessor(CalibDataProcessor):
 
     def load_raw_file_DCS(self):
         """
-        Load following data from file:
+        Load following data from input file:
             - imagesDCS
         """
         with h5py.File(self.input_file_path) as file:
@@ -118,8 +119,8 @@ class RawDataProcessor(CalibDataProcessor):
 
     def calc_calib_data(self):
         """
-        Calculates calibration data out of single frame data by averaging of each measure frame.
-        :return:
+        Calculates 'calibration data' out of single frame data by averaging of each measure frame.
+        In other words, it averages all measurements at one delay line for each pixel.
         """
         print('Calculating calibration data...', end=' ')
         self.raw_data = np.mean(self.raw_frames, 1)
@@ -136,7 +137,7 @@ class RawDataProcessor(CalibDataProcessor):
         plot_title = f'{self.chip}, DLL = {delay_step + 1}'
 
         fig, ax = plt.subplots()
-        n, bins, patches = plt.hist(x=self.stdev_pixel[delay_step].flatten(), bins=320, rwidth=1., color='b', range=[0, 100])
+        plt.hist(x=self.stdev_pixel[delay_step].flatten(), bins=320, rwidth=1., color='b', range=[0, 100])
 
         # set labels
         ax.set_xlabel('Statistical deviation of one pixel [mm]')
@@ -152,16 +153,20 @@ class RawDataProcessor(CalibDataProcessor):
 
 
 if __name__ == '__main__':
+
+    # EXAMPLE USAGE
+
     input_file_path = \
         r'C:\Data\01_NFL\NFL_data\raw_data\W578_C132\W578_C132_10000_RawData_DRNU_27082021_170551.hdf5' # 75 frames per DLL, just DCS
+        # r'C:\Data\01_NFL\NFL_data\raw_data\W603_C096_41\GrayCalibData_All_W603_C096_09062021_125503.hdf5' # greyscale
         # r'C:\Data\01_NFL\NFL_data\raw_data\W603_C096_41\W603_C096_10000_CalibData_DRNU_09062021_131457.hdf5'
         # r'C:\Data\01_NFL\NFL_data\raw_data\W578_C132\W578_C132_10000_RawData_DRNU_27082021_162711.hdf5' # 50 frames per DLL, just DCS
     output_path = r'C:\Data\01_NFL\NFL_data\Analysis\Raw_recordings'
 
     reader = RawDataProcessor(input_file_path, output_path)
 
-    reader.create_folders()
-    # reader.get_file_info()
+    # reader.create_folders()
+    reader.get_file_info()
     # reader.load_raw_file()        # load distance data from h5 file
     reader.load_raw_file_DCS()    # load DCS data from h5 file
     reader.convert_dcs_to_mm()
@@ -178,15 +183,15 @@ if __name__ == '__main__':
     # plot mean and stdev as if calibration data was loaded
     reader.calc_mean_std_all_dll()  # calculate mean and stdev for each DLL
     reader.data_type = 'dl_step'
+    # reader.data_type = 'single_meas'
     reader.plot_mean_std()
-    reader.data_type = 'single_meas'
 
-    # [reader.plot_hist_pix_std(i) for i in range(reader.n_delay_steps)]
+    # plot std. dev. histograms for all delay line steps
+    [reader.plot_hist_pix_std(i) for i in range(reader.n_delay_steps)]
 
     # plot mean and stdev for all delay lines
-    # for dll in range(reader.n_delay_steps):
-    #     reader.calc_mean_std(dll)
-    #     reader.plot_mean_std(file_suff=f'dll-{dll:02d}')
+    for dll in range(reader.n_delay_steps):
+        reader.calc_mean_std(dll)
+        reader.plot_mean_std(file_suff=f'dll-{dll:02d}')
 
     # ====== TESTING SPACE =======
-
