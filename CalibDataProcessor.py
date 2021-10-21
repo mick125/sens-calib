@@ -22,7 +22,7 @@ class CalibDataProcessor:
         self.chip_dim = (240, 320)
         self.n_delay_steps = 50
         self.maxphase = 3e4
-        self.output_path = Path(output_path) / f'{self.chip}_{self.mod_frequency / 1e6:.0f}MHz'
+        self.output_path = Path(output_path) / f'{self.chip}_{self.mod_frequency / 1e6:.1f}MHz'
         self.raw_data = np.zeros((1, 1, 1))
         self.calibrated_data = []
         self.sigma_map = np.zeros((1, 1, 1))
@@ -48,7 +48,7 @@ class CalibDataProcessor:
             try:
                 os.makedirs(self.output_path / folder)
             except:
-                print(f'\tFolder "{folder}" already exists!')
+                print(f'\tFolder "{self.output_path / folder}" already exists!')
 
         print('Required folders created')
 
@@ -720,8 +720,10 @@ if __name__ == '__main__':
 
     # EXAMPLE USAGE
 
-    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W418_C237\W418_C237_10000_drnu_images.bin'
-    input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W418_C237\W418_C237_24000_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W578_C132_23.5MHz-01\W578_C132_23500_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W578_C132_23.5MHz-02\W578_C132_23500_drnu_images.bin'
+    input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W578_C132_23.5MHz-03\W578_C132_23500_drnu_images.bin'
+    # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W418_C237\W418_C237_24000_drnu_images.bin'
     # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W413_C243\W413_C243_10000_drnu_images_dualphase_4dcs.bin'
     # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W413_C243\W413_C243_24000_drnu_images_dualphase_4dcs.bin'
     # input_file_path = r'C:\Data\01_NFL\NFL_data\calib_data\W438_C269\W438_C269_10000_drnu_images.bin'
@@ -734,7 +736,7 @@ if __name__ == '__main__':
     reader.create_folders()
 
     reader.load_raw_file()
-    reader.compensate_rollover()
+    # reader.compensate_rollover()
     # ua_dist = reader.fit_rollover()
     # reader.plot_overlayed_rollovers(ua_dist)
     # reader.plot_overlayed_4order_wave_mean(ua_dist)
@@ -771,17 +773,17 @@ if __name__ == '__main__':
     # Basic plotting
     reader.plot_mean_std()
 
-    reader.plot_extreme_pix(3, 5, 'max')
-    reader.plot_extreme_pix(3, 5, 'min')
+    # reader.plot_extreme_pix(3, 5, 'max')
+    # reader.plot_extreme_pix(3, 5, 'min')
 
-    reader.plot_all('heat')
-    reader.plot_all('hist')
+    # reader.plot_all('heat')
+    # reader.plot_all('hist')
 
-    reader.create_discr_map(2)
-    reader.plot_all('discr')
+    # reader.create_discr_map(2)
+    # reader.plot_all('discr')
 
-    reader.create_sigma_map()
-    reader.plot_sigma_map()
+    # reader.create_sigma_map()
+    # reader.plot_sigma_map()
 
     # --- Calibration fit required: distribution of fit parameters
     # reader.plot_hist_fit_params()
